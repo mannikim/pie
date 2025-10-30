@@ -5,7 +5,7 @@ mannikim's personal image editor
 - [ ] add file editing
 - [ ] add color picker (maybe a separate program?)
 - [ ] brush draws lines instead of setting a pixel every frame
-- [ ] main() requires some cleanup
+- [x] main() requires some cleanup
 - [ ] separate image from canvas to facilitate layers later
 +++ end todo +++
 */
@@ -25,12 +25,15 @@ mannikim's personal image editor
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#define ALWAYS_INLINE __attribute__((always_inline)) inline static
+
 #define WIDTH 800
 #define HEIGHT 600
 
-#define ALWAYS_INLINE __attribute__((always_inline)) inline static
-
 #define UI_CANVAS_SIZE 512
+
+/* color used to fill a new blank canvas */
+#define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
 struct Vec2f {
 	double x, y;
@@ -50,10 +53,11 @@ struct ColorRGBA {
 
 struct Canvas {
 	struct ColorRGBA *pixels;
+
 	int width;
 	int height;
 
-	double zoom;
+	double scale;
 
 	struct Transform tr;
 	struct TextureData tex;
@@ -67,6 +71,14 @@ struct Globals {
 	bool m0Down, m1Down;
 	float aspectRatio;
 } static GLOBALS;
+
+struct pie {
+	int argc;
+	char **argv;
+	bool useStdin, useStdout, hasInput;
+
+	struct Canvas canvas;
+};
 
 ALWAYS_INLINE bool
 mtBounds(double x, double y, double bx, double by, double w, double h)
@@ -111,7 +123,7 @@ obCanvasAlign(struct Canvas *canvas)
 	double s = mtScaleFitIn(
 		canvas->width, canvas->height, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
 
-	canvas->zoom = s;
+	canvas->scale = s;
 	canvas->tr.size.x = canvas->width * s;
 	canvas->tr.size.y = canvas->height * s;
 	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->width * s) / 2.;
@@ -159,32 +171,32 @@ grCanvasGenTexture(struct Canvas *canvas)
 inline static unsigned int
 grCanvasGenShader(void)
 {
-	const static char *vert_src =
+	const static char *vertSrc =
 		"#version 330 core\n"
 		"layout (location = 0) in vec2 aPos;"
 		"out vec2 texCoord;"
 		"uniform vec4 uTr;"
 		"uniform vec4 uTex;"
 		"void main() {"
-		"vec2 out_pos = vec2(uTr.x, uTr.y) + "
+		"vec2 outPos = vec2(uTr.x, uTr.y) + "
 		"vec2(aPos.x * uTr.z, aPos.y * uTr.w);"
-		"gl_Position = vec4(out_pos.x / 400 - 1, out_pos.y / -300 + "
+		"gl_Position = vec4(outPos.x / 400 - 1, outPos.y / -300 + "
 		"1, 0, 1);"
 		"texCoord = vec2("
 		"(gl_VertexID & 0x1) * uTex.z + uTex.x,"
 		"((gl_VertexID & 0x2) >> 1) * uTex.w + uTex.y);"
 		"}";
 
-	const static char *frag_src = "#version 330 core\n"
-				      "in vec2 texCoord;"
-				      "out vec4 FragColor;"
-				      "uniform sampler2D tex;"
-				      "void main() {"
-				      "FragColor = texture(tex, texCoord);"
-				      "}";
+	const static char *fragSrc = "#version 330 core\n"
+				     "in vec2 texCoord;"
+				     "out vec4 FragColor;"
+				     "uniform sampler2D tex;"
+				     "void main() {"
+				     "FragColor = texture(tex, texCoord);"
+				     "}";
 
 	unsigned int shv = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(shv, 1, &vert_src, 0);
+	glShaderSource(shv, 1, &vertSrc, 0);
 	glCompileShader(shv);
 
 	int success;
@@ -197,7 +209,7 @@ grCanvasGenShader(void)
 	}
 
 	unsigned int shf = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(shf, 1, &frag_src, 0);
+	glShaderSource(shf, 1, &fragSrc, 0);
 	glCompileShader(shf);
 
 	glGetShaderiv(shf, GL_COMPILE_STATUS, &success);
@@ -333,7 +345,7 @@ grInit(GLFWwindow **window)
 }
 
 static uint8_t *
-read_file_full(FILE *file, size_t *out_size)
+readFileFull(FILE *file, size_t *outSize)
 {
 	size_t size = 0;
 	size_t capacity = 4096;
@@ -349,70 +361,194 @@ read_file_full(FILE *file, size_t *out_size)
 		if (size >= capacity)
 		{
 			capacity *= 2;
-			unsigned char *new_buffer = realloc(buffer, capacity);
+			unsigned char *newBuffer = realloc(buffer, capacity);
 
-			if (!new_buffer)
+			if (!newBuffer)
 			{
 				free(buffer);
 				return NULL;
 			}
 
-			buffer = new_buffer;
+			buffer = newBuffer;
 		}
 		buffer[size++] = (unsigned char)c;
 		c = fgetc(file);
 	}
 
-	*out_size = size;
+	*outSize = size;
 	return buffer;
 }
 
 static void
-write_stdout_image(void *context, void *data, int size)
+writeStdoutImage(void *context, void *data, int size)
 {
 	(void)context;
 	fwrite(data, 1, (size_t)size, stdout);
 }
 
+static inline void
+parseArguments(struct pie *pie, int argc, char **argv)
+{
+	/* required args */
+
+	pie->argc = argc;
+	pie->argv = argv;
+
+	if (argc <= 1)
+	{
+		fprintf(stderr, "No output file specified\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (strcmp(argv[1], "-") == 0)
+	{
+		pie->useStdout = true;
+	}
+
+	/* optional args */
+
+	if (argc < 3)
+		return;
+
+	pie->hasInput = true;
+
+	if (strcmp(argv[2], "-") == 0)
+	{
+		pie->useStdin = true;
+	}
+}
+
+/* TODO this is bad interface. that means the data isn't properly bundled. */
+ALWAYS_INLINE void
+closeProgram(struct pie *pie, struct Canvas *canvas)
+{
+	if (pie->useStdout)
+	{
+		stbi_write_png_to_func(writeStdoutImage,
+				       NULL,
+				       canvas->width,
+				       canvas->height,
+				       4,
+				       canvas->pixels,
+				       canvas->width *
+					       (int)sizeof(*canvas->pixels));
+	} else
+	{
+		stbi_write_png(pie->argv[1],
+			       canvas->width,
+			       canvas->height,
+			       4,
+			       canvas->pixels,
+			       canvas->width * (int)sizeof(*canvas->pixels));
+	}
+}
+
+static void
+loadInputFile(struct pie *pie, struct Canvas *canvas)
+{
+	if (pie->useStdin)
+	{
+		size_t size;
+		uint8_t *data = readFileFull(stdin, &size);
+
+		if (data == NULL)
+		{
+			perror("Error while reading standard input");
+			exit(EXIT_FAILURE);
+		}
+
+		canvas->pixels = (void *)stbi_load_from_memory(data,
+							       (int)size,
+							       &canvas->width,
+							       &canvas->height,
+							       NULL,
+							       4);
+		free(data);
+
+		if (canvas->pixels == NULL)
+		{
+			fprintf(stderr, "Failed to parse standard input\n");
+			exit(EXIT_FAILURE);
+		}
+
+		return;
+	}
+
+	if (pie->hasInput)
+	{
+		FILE *file = fopen(pie->argv[2], "r");
+		if (file == NULL)
+		{
+			perror("Failed to open input file");
+			exit(EXIT_FAILURE);
+		}
+
+		canvas->pixels = (void *)stbi_load_from_file(
+			file, &canvas->width, &canvas->height, NULL, 4);
+
+		if (canvas->pixels == NULL)
+		{
+			fprintf(stderr, "Failed to parse input file\n");
+		}
+
+		fclose(file);
+
+		return;
+	}
+
+	/* new blank canvas */
+
+	unsigned int pixels = (unsigned int)(canvas->height * canvas->width);
+	canvas->pixels = calloc(1, pixels * sizeof(*canvas->pixels));
+
+	if (canvas->pixels == NULL)
+	{
+		perror("Failed to create blank image");
+		exit(EXIT_FAILURE);
+	}
+
+	for (unsigned int i = 0; i < pixels; i++)
+	{
+		canvas->pixels[i] = BG_COLOR;
+	}
+}
+
+static void
+mouseDown(GLFWwindow *window, struct Canvas *canvas)
+{
+	/* painting system */
+	/* TODO create a function specifically for painting */
+
+	double mx, my;
+	glfwGetCursorPos(window, &mx, &my);
+
+	mx = (mx - canvas->tr.pos.x) / canvas->scale;
+	my = (my - canvas->tr.pos.y) / canvas->scale;
+
+	if (mtBounds(mx, my, 0, 0, canvas->width, canvas->height))
+	{
+		size_t id = (size_t)mx + (size_t)my * (size_t)canvas->width;
+		canvas->pixels[id].r = 0xff;
+		canvas->pixels[id].g = 0;
+		canvas->pixels[id].b = 0;
+		grCanvasUpdate(canvas, (int)mx, (int)my, 1, 1);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
+	struct pie pie = {0};
+	parseArguments(&pie, argc, argv);
+
 	struct Canvas canvas = {NULL, 128, 256, 0, {0}, {0, 0, 1, 1}, {0}};
 
-	if (argc >= 2 && strcmp(argv[1], "-") == 0)
-	{
-		int c;
-		size_t size;
-		uint8_t *data = read_file_full(stdin, &size);
-		if (data == NULL)
-			return EXIT_FAILURE;
-		canvas.pixels = (void *)stbi_load_from_memory(
-			data, (int)size, &canvas.width, &canvas.height, &c, 4);
-		free(data);
-	} else
-	{
-		canvas.pixels = calloc(1,
-				       (unsigned int)canvas.width *
-					       (unsigned int)canvas.height *
-					       sizeof(*canvas.pixels));
-	}
-
-	if (canvas.pixels == NULL)
-	{
-		fprintf(stderr, "Failed to allocate memory.\n");
-		return EXIT_FAILURE;
-	}
+	/* read input file */
+	loadInputFile(&pie, &canvas);
 
 	GLFWwindow *window;
 	if (grInit(&window) == EXIT_FAILURE)
 		return EXIT_FAILURE;
-
-	/*
-		for (int i = 0; i < canvas.width * canvas.height; i++)
-		{
-			canvas.pixels[i] = (struct ColorRGBA){0xff, 0xff, 0xff,
-	   0xff};
-		}*/
 
 	obCanvasAlign(&canvas);
 	grCanvasInitGr(&canvas);
@@ -423,21 +559,7 @@ main(int argc, char **argv)
 
 		if (GLOBALS.m0Down)
 		{
-			double mx, my;
-			glfwGetCursorPos(window, &mx, &my);
-			mx = (mx - canvas.tr.pos.x) / canvas.zoom;
-			my = (my - canvas.tr.pos.y) / canvas.zoom;
-			if (mtBounds(
-				    mx, my, 0, 0, canvas.width, canvas.height))
-			{
-				size_t id = (size_t)mx +
-					    (size_t)my * (size_t)canvas.width;
-				canvas.pixels[id].r = 0xff;
-				canvas.pixels[id].g = 0;
-				canvas.pixels[id].b = 0;
-				grCanvasUpdate(
-					&canvas, (int)mx, (int)my, 1, 1);
-			}
+			mouseDown(window, &canvas);
 		}
 
 		grDrawCanvas(&canvas);
@@ -446,17 +568,7 @@ main(int argc, char **argv)
 		glfwPollEvents();
 	}
 
-
-	if (argc >= 3 && strcmp(argv[2], "-") == 0)
-	{
-		stbi_write_png_to_func(write_stdout_image,
-				       NULL,
-				       canvas.width,
-				       canvas.height,
-				       4,
-				       canvas.pixels,
-				       canvas.width * (int)sizeof(*canvas.pixels));
-	}
+	closeProgram(&pie, &canvas);
 
 	glfwTerminate();
 	free(canvas.pixels);

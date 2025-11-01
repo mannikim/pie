@@ -1,9 +1,70 @@
 /*
 mannikim's personal image editor
 
+MAXIMUM FILE COUNT: 7
+MAXIMUM LINE COUNT:
+pie.c: 1777
+Makefile: 77
+.git and dependencies not included
+
+the limit doesn't care about comments or empty lines
+this limit should not compromise the project readability or quality
+in other words, code like there is no limit, until we reach it
+
 +++ todo +++
 - [x] add file editing
 - [ ] add color picker (maybe a separate program?)
+  i was thinking about this issue and i thought on these solutions:
+
+  1- the program reads from stdin
+  simplest solution but kinda awkward to implement and use
+
+  using graphical + console program is weird as fuck and i don't recall any
+  other program doing this. also loading color palettes be damned; it's going
+  to be hell to make an interface for it and keeping the save file to stdout
+  functional
+
+  2- implement a color picker inside the program
+  the most obvious one. also the most complex of them all
+
+  the math for it isn't that bad. the issue is ui. i'm thinking the code for it
+  might be too complex for just the picker. although i'm planning on adding
+  other stuff for ui too.
+
+  not only that, it kills a nice opportunity to make the program a bit more
+  modular
+
+  3- use an external program like dmenu
+  keeps the complexity away from this program
+
+  pros:
+  - keeps the program modular
+  - for a while i've been annoyed by the lack of functionality of a lot of
+    different color pickers out there. if i were to use an external program,
+    i would make it myself and fix all the little annoyances i have with them
+  - simple interface to allow users to use their own pickers, if they please
+  - i could be lazy and just call dmenu directly for input
+  - style points
+
+  cons:
+  - needs another program for it, complicates the editor a bit
+  - has a similar issue with displaying color, read the next solution for
+  context
+
+  4- keybinds which change the current color
+  only alternative where we don't need to implement a color parser
+
+  displaying the current color becomes an issue since i don't have any obvious
+  way of displaying it. writing on the screen would require me to implement
+  font rendering which i don't want to deal with at this time, and would
+  increase the complexity a lot. wouldn't be an issue if i was using some
+  higher-level libraries like x11 or sdl but this is not the case here
+
+  i could change the window title for the current color selected. this is
+  probably the cleanest way possible
+
+  this is the alternative that i enjoy the least
+
 - [x] brush draws lines instead of setting a pixel every frame
 - [x] main() requires some cleanup
 - [ ] separate image from canvas to facilitate layers later
@@ -213,6 +274,8 @@ grCompileShader(int type, const char *src)
 		glGetShaderInfoLog(out, 512, 0, infolog);
 		fprintf(stderr, "%s\n", infolog);
 	}
+
+	return out;
 }
 
 inline static unsigned int
@@ -236,6 +299,7 @@ grCanvasGenShader(void)
 		glGetProgramInfoLog(shader, 512, 0, infolog);
 		fprintf(stderr, "%s\n", infolog);
 	}
+
 
 	glUseProgram(shader);
 
@@ -294,10 +358,12 @@ ALWAYS_INLINE void
 grCanvasInitGr(struct Canvas *canvas)
 {
 	grCanvasGenVAO();
+
 	grCanvasGenTexture(canvas);
 	canvas->ids.shader = grCanvasGenShader();
 	canvas->ids.uTr = glGetUniformLocation(canvas->ids.shader, "uTr");
 	canvas->ids.uTex = glGetUniformLocation(canvas->ids.shader, "uTex");
+
 
 	const struct Transform tr = canvas->tr;
 	glUniform4f(canvas->ids.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
@@ -310,17 +376,17 @@ grCanvasInitGr(struct Canvas *canvas)
 }
 
 ALWAYS_INLINE void
-grCanvasUpdate(struct Canvas *canvas, int x, int y, int width, int height)
+grCanvasUpdate(struct Canvas *canvas)
 {
 	glTexSubImage2D(GL_TEXTURE_2D,
 			0,
-			x,
-			y,
-			width,
-			height,
+			0,
+			0,
+			canvas->width,
+			canvas->height,
 			GL_RGBA,
 			GL_UNSIGNED_BYTE,
-			&canvas->pixels[x + y * canvas->width]);
+			canvas->pixels);
 }
 
 ALWAYS_INLINE unsigned int
@@ -388,6 +454,7 @@ readFileFull(FILE *file, size_t *outSize)
 
 			buffer = newBuffer;
 		}
+
 		buffer[size++] = (unsigned char)c;
 		c = fgetc(file);
 	}
@@ -418,9 +485,7 @@ parseArguments(struct pie *pie, int argc, char **argv)
 	}
 
 	if (strcmp(argv[1], "-") == 0)
-	{
 		pie->useStdout = true;
-	}
 
 	/* optional args */
 
@@ -430,9 +495,7 @@ parseArguments(struct pie *pie, int argc, char **argv)
 	pie->hasInput = true;
 
 	if (strcmp(argv[2], "-") == 0)
-	{
 		pie->useStdin = true;
-	}
 }
 
 ALWAYS_INLINE void
@@ -562,7 +625,6 @@ strokePencil(struct Canvas *canvas,
 
 	struct Vec2f d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2f absd = {fabs(d.x), fabs(d.y)};
-	struct Vec2f cur = v0;
 	double count;
 
 	if (absd.x > absd.y)
@@ -575,6 +637,9 @@ strokePencil(struct Canvas *canvas,
 
 	step.x = d.x / count;
 	step.y = d.y / count;
+
+	struct Vec2f cur = v0;
+
 
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
@@ -591,7 +656,7 @@ strokePencil(struct Canvas *canvas,
 static void
 mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
 {
-	/* canvas relative start postition */
+	/* canvas relative start position */
 	struct Vec2f rs;
 	rs.x = (start.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
 	rs.y = (start.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
@@ -607,11 +672,7 @@ mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
 		re.y = mtClampd(re.y, 0, pie->canvas.height - 1);
 
 		strokePencil(&pie->canvas, pie->color, rs, re);
-		grCanvasUpdate(&pie->canvas,
-			       0,
-			       0,
-			       pie->canvas.width,
-			       pie->canvas.height);
+		grCanvasUpdate(&pie->canvas);
 	}
 }
 
@@ -621,9 +682,9 @@ main(int argc, char **argv)
 	struct pie pie = {0};
 	parseArguments(&pie, argc, argv);
 
+	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.canvas = (struct Canvas){NULL, 50, 50, 0, {0}, {0, 0, 1, 1}, {0}};
 
-	/* read input file */
 	loadInputFile(&pie);
 
 	GLFWwindow *window;
@@ -633,10 +694,9 @@ main(int argc, char **argv)
 	canvasAlign(&pie.canvas);
 	grCanvasInitGr(&pie.canvas);
 
+
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);
-
-	grCanvasUpdate(&pie.canvas, 0, 0, pie.canvas.width, pie.canvas.height);
 
 	while (!glfwWindowShouldClose(window))
 	{

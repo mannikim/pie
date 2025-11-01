@@ -2,22 +2,23 @@
 mannikim's personal image editor
 
 +++ todo +++
-- [ ] add file editing
+- [x] add file editing
 - [ ] add color picker (maybe a separate program?)
-- [ ] brush draws lines instead of setting a pixel every frame
+- [x] brush draws lines instead of setting a pixel every frame
 - [x] main() requires some cleanup
 - [ ] separate image from canvas to facilitate layers later
+- [ ] fix canvas not rendering transparent colors
+
+# stuff for release
+- [ ] license
+- [ ] proper project description
 +++ end todo +++
 */
 
 #include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-#include <string.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -30,7 +31,7 @@ mannikim's personal image editor
 #define WIDTH 800
 #define HEIGHT 600
 
-#define UI_CANVAS_SIZE 512
+#define UI_CANVAS_SIZE 600
 
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
@@ -78,7 +79,33 @@ struct pie {
 	bool useStdin, useStdout, hasInput;
 
 	struct Canvas canvas;
+	struct ColorRGBA color;
 };
+
+const static char *canvasVertSrc =
+	"#version 330 core\n"
+	"layout (location = 0) in vec2 aPos;"
+	"out vec2 texCoord;"
+	"uniform vec4 uTr;"
+	"uniform vec4 uTex;"
+	"void main() {"
+	"vec2 outPos = vec2(uTr.x, uTr.y) + "
+	"vec2(aPos.x * uTr.z, aPos.y * uTr.w);"
+	"gl_Position = vec4(outPos.x / 400 - 1, outPos.y / -300 + 1, 0, 1);"
+	"texCoord = vec2("
+	"(gl_VertexID & 0x1) * uTex.z + uTex.x,"
+	"((gl_VertexID & 0x2) >> 1) * uTex.w + uTex.y);"
+	"}";
+
+const static char *canvasFragSrc = "#version 330 core\n"
+				   "in vec2 texCoord;"
+				   "out vec4 FragColor;"
+				   "uniform sampler2D tex;"
+				   "void main() {"
+				   "FragColor = texture(tex, texCoord);"
+				   "}";
+
+/* MATH */
 
 ALWAYS_INLINE bool
 mtBounds(double x, double y, double bx, double by, double w, double h)
@@ -100,6 +127,20 @@ mtScaleFitIn(double w0, double h0, double w1, double h1)
 	return r0 < r1 ? r0 : r1;
 }
 
+ALWAYS_INLINE double
+mtClampd(double x, double min, double max)
+{
+	if (x > max)
+		return max;
+
+	if (x < min)
+		return min;
+
+	return x;
+}
+
+/* INPUT */
+
 static void
 inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 {
@@ -117,18 +158,7 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 	}
 }
 
-inline static void
-obCanvasAlign(struct Canvas *canvas)
-{
-	double s = mtScaleFitIn(
-		canvas->width, canvas->height, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
-
-	canvas->scale = s;
-	canvas->tr.size.x = canvas->width * s;
-	canvas->tr.size.y = canvas->height * s;
-	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->width * s) / 2.;
-	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->height * s) / 2.;
-}
+/* GRAPHICS */
 
 static void
 grFramebufferCallback(GLFWwindow *window, int width, int height)
@@ -169,56 +199,27 @@ grCanvasGenTexture(struct Canvas *canvas)
 }
 
 inline static unsigned int
-grCanvasGenShader(void)
+grCompileShader(int type, const char *src)
 {
-	const static char *vertSrc =
-		"#version 330 core\n"
-		"layout (location = 0) in vec2 aPos;"
-		"out vec2 texCoord;"
-		"uniform vec4 uTr;"
-		"uniform vec4 uTex;"
-		"void main() {"
-		"vec2 outPos = vec2(uTr.x, uTr.y) + "
-		"vec2(aPos.x * uTr.z, aPos.y * uTr.w);"
-		"gl_Position = vec4(outPos.x / 400 - 1, outPos.y / -300 + "
-		"1, 0, 1);"
-		"texCoord = vec2("
-		"(gl_VertexID & 0x1) * uTex.z + uTex.x,"
-		"((gl_VertexID & 0x2) >> 1) * uTex.w + uTex.y);"
-		"}";
-
-	const static char *fragSrc = "#version 330 core\n"
-				     "in vec2 texCoord;"
-				     "out vec4 FragColor;"
-				     "uniform sampler2D tex;"
-				     "void main() {"
-				     "FragColor = texture(tex, texCoord);"
-				     "}";
-
-	unsigned int shv = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(shv, 1, &vertSrc, 0);
-	glCompileShader(shv);
+	unsigned int out = glCreateShader(type);
+	glShaderSource(out, 1, &src, 0);
+	glCompileShader(out);
 
 	int success;
-	glGetShaderiv(shv, GL_COMPILE_STATUS, &success);
+	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
 	if (!success)
 	{
 		char infolog[512];
-		glGetShaderInfoLog(shv, 512, 0, infolog);
-		printf("%s\n", infolog);
+		glGetShaderInfoLog(out, 512, 0, infolog);
+		fprintf(stderr, "%s\n", infolog);
 	}
+}
 
-	unsigned int shf = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(shf, 1, &fragSrc, 0);
-	glCompileShader(shf);
-
-	glGetShaderiv(shf, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetShaderInfoLog(shf, 512, 0, infolog);
-		printf("%s\n", infolog);
-	}
+inline static unsigned int
+grCanvasGenShader(void)
+{
+	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, canvasVertSrc);
+	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, canvasFragSrc);
 
 	unsigned int shader = glCreateProgram();
 
@@ -227,12 +228,13 @@ grCanvasGenShader(void)
 
 	glLinkProgram(shader);
 
+	int success;
 	glGetProgramiv(shader, GL_LINK_STATUS, &success);
 	if (!success)
 	{
 		char infolog[512];
 		glGetProgramInfoLog(shader, 512, 0, infolog);
-		printf("%s\n", infolog);
+		fprintf(stderr, "%s\n", infolog);
 	}
 
 	glUseProgram(shader);
@@ -344,6 +346,21 @@ grInit(GLFWwindow **window)
 	return EXIT_SUCCESS;
 }
 
+/* ORPHANS */
+
+inline static void
+canvasAlign(struct Canvas *canvas)
+{
+	double s = mtScaleFitIn(
+		canvas->width, canvas->height, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
+
+	canvas->scale = s;
+	canvas->tr.size.x = canvas->width * s;
+	canvas->tr.size.y = canvas->height * s;
+	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->width * s) / 2.;
+	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->height * s) / 2.;
+}
+
 static uint8_t *
 readFileFull(FILE *file, size_t *outSize)
 {
@@ -418,7 +435,6 @@ parseArguments(struct pie *pie, int argc, char **argv)
 	}
 }
 
-/* TODO this is bad interface. that means the data isn't properly bundled. */
 ALWAYS_INLINE void
 closeProgram(struct pie *pie, struct Canvas *canvas)
 {
@@ -443,65 +459,83 @@ closeProgram(struct pie *pie, struct Canvas *canvas)
 	}
 }
 
+ALWAYS_INLINE void
+loadStdin(struct pie *pie)
+{
+	size_t size;
+
+	/* stb_image.h requires a seekable file, so we can't use stdin
+	 * it is possible in some cases, like if you do
+	 * pie out.png - < img.png
+	 * but assuming we always can't makes the code simpler */
+	uint8_t *data = readFileFull(stdin, &size);
+
+	if (data == NULL)
+	{
+		perror("Error while reading standard input");
+		exit(EXIT_FAILURE);
+	}
+
+	pie->canvas.pixels = (void *)stbi_load_from_memory(data,
+							   (int)size,
+							   &pie->canvas.width,
+							   &pie->canvas.height,
+							   NULL,
+							   4);
+	free(data);
+
+	if (pie->canvas.pixels == NULL)
+	{
+		fprintf(stderr, "Failed to parse standard input\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+ALWAYS_INLINE void
+loadArgFile(struct pie *pie)
+{
+	FILE *file = fopen(pie->argv[2], "r");
+	if (file == NULL)
+	{
+		perror("Failed to open input file");
+		exit(EXIT_FAILURE);
+	}
+
+	pie->canvas.pixels = (void *)stbi_load_from_file(
+		file, &pie->canvas.width, &pie->canvas.height, NULL, 4);
+
+	if (pie->canvas.pixels == NULL)
+	{
+		fclose(file);
+		fprintf(stderr, "Failed to parse input file\n");
+		exit(EXIT_FAILURE);
+	}
+
+	fclose(file);
+}
+
 static void
-loadInputFile(struct pie *pie, struct Canvas *canvas)
+loadInputFile(struct pie *pie)
 {
 	if (pie->useStdin)
 	{
-		size_t size;
-		uint8_t *data = readFileFull(stdin, &size);
-
-		if (data == NULL)
-		{
-			perror("Error while reading standard input");
-			exit(EXIT_FAILURE);
-		}
-
-		canvas->pixels = (void *)stbi_load_from_memory(data,
-							       (int)size,
-							       &canvas->width,
-							       &canvas->height,
-							       NULL,
-							       4);
-		free(data);
-
-		if (canvas->pixels == NULL)
-		{
-			fprintf(stderr, "Failed to parse standard input\n");
-			exit(EXIT_FAILURE);
-		}
-
+		loadStdin(pie);
 		return;
 	}
 
 	if (pie->hasInput)
 	{
-		FILE *file = fopen(pie->argv[2], "r");
-		if (file == NULL)
-		{
-			perror("Failed to open input file");
-			exit(EXIT_FAILURE);
-		}
-
-		canvas->pixels = (void *)stbi_load_from_file(
-			file, &canvas->width, &canvas->height, NULL, 4);
-
-		if (canvas->pixels == NULL)
-		{
-			fprintf(stderr, "Failed to parse input file\n");
-		}
-
-		fclose(file);
-
+		loadArgFile(pie);
 		return;
 	}
 
 	/* new blank canvas */
 
-	unsigned int pixels = (unsigned int)(canvas->height * canvas->width);
-	canvas->pixels = calloc(1, pixels * sizeof(*canvas->pixels));
+	unsigned int pixels =
+		(unsigned int)(pie->canvas.height * pie->canvas.width);
+	pie->canvas.pixels = calloc(1, pixels * sizeof(*pie->canvas.pixels));
 
-	if (canvas->pixels == NULL)
+	if (pie->canvas.pixels == NULL)
 	{
 		perror("Failed to create blank image");
 		exit(EXIT_FAILURE);
@@ -509,29 +543,75 @@ loadInputFile(struct pie *pie, struct Canvas *canvas)
 
 	for (unsigned int i = 0; i < pixels; i++)
 	{
-		canvas->pixels[i] = BG_COLOR;
+		pie->canvas.pixels[i] = BG_COLOR;
 	}
 }
 
 static void
-mouseDown(GLFWwindow *window, struct Canvas *canvas)
+strokePencil(struct Canvas *canvas,
+	     struct ColorRGBA color,
+	     struct Vec2f v0,
+	     struct Vec2f v1)
 {
-	/* painting system */
-	/* TODO create a function specifically for painting */
+	struct Vec2f step = {0};
 
-	double mx, my;
-	glfwGetCursorPos(window, &mx, &my);
+	v0.x = floor(v0.x);
+	v0.y = floor(v0.y);
+	v1.x = floor(v1.x);
+	v1.y = floor(v1.y);
 
-	mx = (mx - canvas->tr.pos.x) / canvas->scale;
-	my = (my - canvas->tr.pos.y) / canvas->scale;
+	struct Vec2f d = {v1.x - v0.x, v1.y - v0.y};
+	struct Vec2f absd = {fabs(d.x), fabs(d.y)};
+	struct Vec2f cur = v0;
+	double count;
 
-	if (mtBounds(mx, my, 0, 0, canvas->width, canvas->height))
+	if (absd.x > absd.y)
 	{
-		size_t id = (size_t)mx + (size_t)my * (size_t)canvas->width;
-		canvas->pixels[id].r = 0xff;
-		canvas->pixels[id].g = 0;
-		canvas->pixels[id].b = 0;
-		grCanvasUpdate(canvas, (int)mx, (int)my, 1, 1);
+		count = absd.x;
+	} else
+	{
+		count = absd.y;
+	}
+
+	step.x = d.x / count;
+	step.y = d.y / count;
+
+	for (size_t i = 0; i < (size_t)(count + 1); i++)
+	{
+		size_t id =
+			(size_t)cur.x + (size_t)cur.y * (size_t)canvas->width;
+
+		canvas->pixels[id] = color;
+
+		cur.x += step.x;
+		cur.y += step.y;
+	}
+}
+
+static void
+mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
+{
+	/* canvas relative start postition */
+	struct Vec2f rs;
+	rs.x = (start.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
+	rs.y = (start.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
+
+	if (mtBounds(rs.x, rs.y, 0, 0, pie->canvas.width, pie->canvas.height))
+	{
+		struct Vec2f re;
+
+		re.x = (end.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
+		re.x = mtClampd(re.x, 0, pie->canvas.width - 1);
+
+		re.y = (end.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
+		re.y = mtClampd(re.y, 0, pie->canvas.height - 1);
+
+		strokePencil(&pie->canvas, pie->color, rs, re);
+		grCanvasUpdate(&pie->canvas,
+			       0,
+			       0,
+			       pie->canvas.width,
+			       pie->canvas.height);
 	}
 }
 
@@ -541,37 +621,44 @@ main(int argc, char **argv)
 	struct pie pie = {0};
 	parseArguments(&pie, argc, argv);
 
-	struct Canvas canvas = {NULL, 128, 256, 0, {0}, {0, 0, 1, 1}, {0}};
+	pie.canvas = (struct Canvas){NULL, 50, 50, 0, {0}, {0, 0, 1, 1}, {0}};
 
 	/* read input file */
-	loadInputFile(&pie, &canvas);
+	loadInputFile(&pie);
 
 	GLFWwindow *window;
 	if (grInit(&window) == EXIT_FAILURE)
 		return EXIT_FAILURE;
 
-	obCanvasAlign(&canvas);
-	grCanvasInitGr(&canvas);
+	canvasAlign(&pie.canvas);
+	grCanvasInitGr(&pie.canvas);
+
+	struct Vec2f m, lastM;
+	glfwGetCursorPos(window, &m.x, &m.y);
+
+	grCanvasUpdate(&pie.canvas, 0, 0, pie.canvas.width, pie.canvas.height);
 
 	while (!glfwWindowShouldClose(window))
 	{
+		lastM.x = m.x;
+		lastM.y = m.y;
+		glfwGetCursorPos(window, &m.x, &m.y);
+
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		if (GLOBALS.m0Down)
-		{
-			mouseDown(window, &canvas);
-		}
+			mouseDown(&pie, lastM, m);
 
-		grDrawCanvas(&canvas);
+		grDrawCanvas(&pie.canvas);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
-	closeProgram(&pie, &canvas);
+	closeProgram(&pie, &pie.canvas);
 
 	glfwTerminate();
-	free(canvas.pixels);
+	free(pie.canvas.pixels);
 
 	return EXIT_SUCCESS;
 }

@@ -22,7 +22,14 @@ in other words, code like there is no limit, until we reach it
 - [x] brush draws lines instead of setting a pixel every frame
 - [x] main() requires some cleanup
 - [ ] separate image from canvas to facilitate layers later
-- [ ] fix canvas not rendering transparent colors
+- [x] fix canvas not rendering transparent colors
+- [ ] add blending for pencil
+  - i tried implementing mtBlend directly on the strokePencil and it works,
+  but some points get influenced by alpha much much stronger than it should.
+  my idea is to create a scratch buffer, draw on it first, then update the
+  canvas blending the alpha properly. i also need to rewrite the brush system
+  to account for keydown / keyup so the buffer is applied properly
+- [ ] draw straight line when shift is pressed
 
 # stuff for release
 - [x] license
@@ -169,6 +176,23 @@ mtClampd(double x, double min, double max)
 		return min;
 
 	return x;
+}
+
+ALWAYS_INLINE struct ColorRGBA
+mtBlend(struct ColorRGBA a, struct ColorRGBA b)
+{
+	double aa = (double)a.a / 255.0;
+	double ba = (double)b.a / 255.0;
+	double k = ba * (1 - aa);
+	double alpha = aa + k;
+
+	struct ColorRGBA out;
+	out.r = (uint8_t)((a.r * aa + b.r * ba * k) / alpha);
+	out.g = (uint8_t)((a.g * aa + b.g * ba * k) / alpha);
+	out.b = (uint8_t)((a.b * aa + b.b * ba * k) / alpha);
+	out.a = (uint8_t)alpha * 0xff;
+
+	return out;
 }
 
 /* INPUT */

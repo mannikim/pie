@@ -9,6 +9,7 @@ MAXIMUM FILE COUNT: 7
 MAXIMUM LINE COUNT:
 pie.c: 1777
 Makefile: 77
+pcp: 77
 .git and dependencies not included
 
 the limit doesn't care about comments or empty lines
@@ -133,7 +134,7 @@ askColor(struct ColorRGBA *out);
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
 /* TODO: make proper pcp script */
-static char *colorPaletteCmd[] = {"pcp.sh", NULL};
+static char *colorPaletteCmd[] = {"pcp", NULL};
 
 /* MATH */
 

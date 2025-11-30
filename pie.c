@@ -68,7 +68,7 @@ struct Canvas {
 	struct TextureData tex;
 
 	struct {
-		unsigned int texture, shader, uTex, uTr;
+		unsigned int texture, shader, uTex, uTr, uWinWidth, uWinHeight;
 	} ids;
 };
 
@@ -92,10 +92,13 @@ const static char *canvasVertSrc =
 	"out vec2 texCoord;"
 	"uniform vec4 uTr;"
 	"uniform vec4 uTex;"
+	"uniform int uWinWidth;"
+	"uniform int uWinHeight;"
 	"void main() {"
 	"vec2 outPos = vec2(uTr.x, uTr.y) + "
 	"vec2(aPos.x * uTr.z, aPos.y * uTr.w);"
-	"gl_Position = vec4(outPos.x / 400 - 1, outPos.y / -300 + 1, 0, 1);"
+	"gl_Position = vec4(outPos.x / (uWinWidth / 2) - 1,"
+	"outPos.y / (uWinHeight / -2) + 1, 0, 1);"
 	"texCoord = vec2("
 	"(gl_VertexID & 0x1) * uTex.z + uTex.x,"
 	"((gl_VertexID & 0x2) >> 1) * uTex.w + uTex.y);"
@@ -118,15 +121,15 @@ askColor(struct ColorRGBA *out);
 #define WIN_TITLE "pie"
 
 #define WIDTH 800
-#define HEIGHT 600
+#define HEIGHT 800
 
-#define UI_CANVAS_SIZE 600
+#define UI_CANVAS_SIZE HEIGHT
 
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
 /* TODO: make proper pcp script */
-static char *colorPaletteCmd[] = {"./pcp.sh", NULL};
+static char *colorPaletteCmd[] = {"pcp.sh", NULL};
 
 /* MATH */
 
@@ -325,6 +328,10 @@ grCanvasInitGr(struct Canvas *canvas)
 	canvas->ids.shader = grCanvasGenShader();
 	canvas->ids.uTr = glGetUniformLocation(canvas->ids.shader, "uTr");
 	canvas->ids.uTex = glGetUniformLocation(canvas->ids.shader, "uTex");
+	canvas->ids.uWinWidth =
+		glGetUniformLocation(canvas->ids.shader, "uWinWidth");
+	canvas->ids.uWinHeight =
+		glGetUniformLocation(canvas->ids.shader, "uWinHeight");
 
 	const struct Transform tr = canvas->tr;
 	glUniform4f(canvas->ids.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
@@ -334,6 +341,9 @@ grCanvasInitGr(struct Canvas *canvas)
 		    canvas->tex.y,
 		    canvas->tex.w,
 		    canvas->tex.h);
+
+	glUniform1i(canvas->ids.uWinWidth, WIDTH);
+	glUniform1i(canvas->ids.uWinHeight, HEIGHT);
 }
 
 ALWAYS_INLINE void
@@ -371,6 +381,9 @@ grInit(struct pie *pie, GLFWwindow **window)
 	glfwSwapInterval(0);
 
 	glewInit();
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	return EXIT_SUCCESS;
 }

@@ -1,4 +1,8 @@
-/*
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ * copyright 2025 mannikim <mannikim[at]proton[dot]me>
+ * this file is part of pie
+ * see LICENSE file for the license text
+
 mannikim's personal image editor
 
 MAXIMUM FILE COUNT: 7
@@ -20,7 +24,7 @@ in other words, code like there is no limit, until we reach it
 - [ ] fix canvas not rendering transparent colors
 
 # stuff for release
-- [ ] license
+- [x] license
 - [ ] proper project description
 +++ end todo +++
 */

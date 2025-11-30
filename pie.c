@@ -85,7 +85,7 @@ struct Canvas {
 	unsigned int vao;
 };
 
- static struct Globals {
+static struct Globals {
 	bool m0Down, m1Down;
 	float aspectRatio;
 } GLOBALS;
@@ -317,8 +317,8 @@ grCanvasGenShader(void)
 static unsigned int
 grCanvasGenVAO(void)
 {
-	static const  float verts[] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
-	static const  unsigned int indices[] = {0, 1, 2, 1, 3, 2};
+	static const float verts[] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+	static const unsigned int indices[] = {0, 1, 2, 1, 3, 2};
 
 	unsigned int vao;
 	glGenVertexArrays(1, &vao);
@@ -478,9 +478,7 @@ writeStdoutImage(void *context, void *data, int size)
 static void
 printUsage(char *progName)
 {
-	printf("%s -h\n%s <file|-> [infile|-]\n",
-	       progName,
-	       progName);
+	printf("%s -h\n%s <file|-> [infile|-]\n", progName, progName);
 }
 
 static inline void
@@ -497,7 +495,8 @@ parseArguments(struct pie *pie, int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	if (strcmp(argv[1], "-h") == 0) {
+	if (strcmp(argv[1], "-h") == 0)
+	{
 		printUsage(argv[0]);
 		exit(EXIT_SUCCESS);
 	}
@@ -794,7 +793,7 @@ main(int argc, char **argv)
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.canvas = (struct Canvas){
-		NULL, 50, 50, 0, {{0,0}, {0,0}}, {0, 0, 1, 1}, {0}, 0};
+		NULL, 50, 50, 0, {{0, 0}, {0, 0}}, {0, 0, 1, 1}, {0}, 0};
 
 	loadInputFile(&pie);
 

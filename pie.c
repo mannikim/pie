@@ -40,14 +40,6 @@ in other words, code like there is no limit, until we reach it
 
 #define ALWAYS_INLINE __attribute__((always_inline)) inline static
 
-#define WIDTH 800
-#define HEIGHT 600
-
-#define UI_CANVAS_SIZE 600
-
-/* color used to fill a new blank canvas */
-#define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
-
 struct Vec2f {
 	double x, y;
 };
@@ -94,9 +86,6 @@ struct pie {
 	struct ColorRGBA color;
 };
 
-/* TODO: make proper pcp script */
-static char *colorPaletteCmd[] = {"./pcp.sh", NULL};
-
 const static char *canvasVertSrc =
 	"#version 330 core\n"
 	"layout (location = 0) in vec2 aPos;"
@@ -123,6 +112,21 @@ const static char *canvasFragSrc = "#version 330 core\n"
 
 static void
 askColor(struct ColorRGBA *out);
+
+/* CONFIG */
+
+#define WIN_TITLE "pie"
+
+#define WIDTH 800
+#define HEIGHT 600
+
+#define UI_CANVAS_SIZE 600
+
+/* color used to fill a new blank canvas */
+#define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
+
+/* TODO: make proper pcp script */
+static char *colorPaletteCmd[] = {"./pcp.sh", NULL};
 
 /* MATH */
 
@@ -163,9 +167,9 @@ mtClampd(double x, double min, double max)
 static void
 inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 {
-	(void)mod;
-	(void)window;
+	(void)mod, (void)window;
 
+	glfwMakeContextCurrent(window);
 	switch (button)
 	{
 	case GLFW_MOUSE_BUTTON_LEFT:
@@ -180,6 +184,8 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 static void
 inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 {
+	(void)scan, (void)mod;
+
 	glfwMakeContextCurrent(window);
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == GLFW_KEY_Q && action == GLFW_RELEASE)
@@ -278,17 +284,7 @@ grCanvasGenShader(void)
 static unsigned int
 grCanvasGenVAO(void)
 {
-	const static float verts[] = {
-		0.0,
-		0.0,
-		1.0,
-		0.0,
-		0.0,
-		1.0,
-		1.0,
-		1.0,
-	};
-
+	const static float verts[] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
 	const static unsigned int indices[] = {0, 1, 2, 1, 3, 2};
 
 	unsigned int vao;
@@ -360,7 +356,7 @@ grInit(struct pie *pie, GLFWwindow **window)
 	glfwInit();
 
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	*window = glfwCreateWindow(WIDTH, HEIGHT, "pie", NULL, NULL);
+	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
 
 	if (window == NULL)
 		return EXIT_FAILURE;
@@ -401,9 +397,7 @@ readFileFull(FILE *file, size_t *outSize)
 	size_t capacity = 4096;
 	unsigned char *buffer = malloc(capacity);
 	if (!buffer)
-	{
 		return NULL;
-	}
 
 	int c = fgetc(file);
 	while (c != EOF)
@@ -478,15 +472,15 @@ closeProgram(struct pie *pie, struct Canvas *canvas)
 				       canvas->pixels,
 				       canvas->width *
 					       (int)sizeof(*canvas->pixels));
-	} else
-	{
-		stbi_write_png(pie->argv[1],
-			       canvas->width,
-			       canvas->height,
-			       4,
-			       canvas->pixels,
-			       canvas->width * (int)sizeof(*canvas->pixels));
+		return;
 	}
+
+	stbi_write_png(pie->argv[1],
+		       canvas->width,
+		       canvas->height,
+		       4,
+		       canvas->pixels,
+		       canvas->width * (int)sizeof(*canvas->pixels));
 }
 
 ALWAYS_INLINE void
@@ -572,9 +566,7 @@ loadInputFile(struct pie *pie)
 	}
 
 	for (unsigned int i = 0; i < pixels; i++)
-	{
 		pie->canvas.pixels[i] = BG_COLOR;
-	}
 }
 
 static void
@@ -595,12 +587,9 @@ strokePencil(struct Canvas *canvas,
 	double count;
 
 	if (absd.x > absd.y)
-	{
 		count = absd.x;
-	} else
-	{
+	else
 		count = absd.y;
-	}
 
 	step.x = d.x / count;
 	step.y = d.y / count;
@@ -668,7 +657,6 @@ stobyte(const char *str, uint8_t *out)
 static bool
 storgba(const char *str, struct ColorRGBA *out)
 {
-	/* TODO: handle malformed strings */
 	union {
 		uint32_t b;
 		struct ColorRGBA c;

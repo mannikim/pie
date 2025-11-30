@@ -364,7 +364,7 @@ grCanvasUpdate(struct Canvas *canvas)
 			canvas->pixels);
 }
 
-ALWAYS_INLINE unsigned int
+ALWAYS_INLINE bool
 grInit(struct pie *pie, GLFWwindow **window)
 {
 	glfwInit();
@@ -373,7 +373,7 @@ grInit(struct pie *pie, GLFWwindow **window)
 	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
 
 	if (window == NULL)
-		return EXIT_FAILURE;
+		return false;
 
 	glfwMakeContextCurrent(*window);
 	glfwSetWindowUserPointer(*window, pie);
@@ -389,7 +389,7 @@ grInit(struct pie *pie, GLFWwindow **window)
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	return EXIT_SUCCESS;
+	return true;
 }
 
 /* ORPHANS */
@@ -772,7 +772,7 @@ main(int argc, char **argv)
 	loadInputFile(&pie);
 
 	GLFWwindow *window;
-	if (grInit(&pie, &window) == EXIT_FAILURE)
+	if (!grInit(&pie, &window))
 		return EXIT_FAILURE;
 
 	canvasAlign(&pie.canvas);

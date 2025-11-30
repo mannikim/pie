@@ -13,58 +13,7 @@ in other words, code like there is no limit, until we reach it
 
 +++ todo +++
 - [x] add file editing
-- [ ] add color picker (maybe a separate program?)
-  i was thinking about this issue and i thought on these solutions:
-
-  1- the program reads from stdin
-  simplest solution but kinda awkward to implement and use
-
-  using graphical + console program is weird as fuck and i don't recall any
-  other program doing this. also loading color palettes be damned; it's going
-  to be hell to make an interface for it and keeping the save file to stdout
-  functional
-
-  2- implement a color picker inside the program
-  the most obvious one. also the most complex of them all
-
-  the math for it isn't that bad. the issue is ui. i'm thinking the code for it
-  might be too complex for just the picker. although i'm planning on adding
-  other stuff for ui too.
-
-  not only that, it kills a nice opportunity to make the program a bit more
-  modular
-
-  3- use an external program like dmenu
-  keeps the complexity away from this program
-
-  pros:
-  - keeps the program modular
-  - for a while i've been annoyed by the lack of functionality of a lot of
-    different color pickers out there. if i were to use an external program,
-    i would make it myself and fix all the little annoyances i have with them
-  - simple interface to allow users to use their own pickers, if they please
-  - i could be lazy and just call dmenu directly for input
-  - style points
-
-  cons:
-  - needs another program for it, complicates the editor a bit
-  - has a similar issue with displaying color, read the next solution for
-  context
-
-  4- keybinds which change the current color
-  only alternative where we don't need to implement a color parser
-
-  displaying the current color becomes an issue since i don't have any obvious
-  way of displaying it. writing on the screen would require me to implement
-  font rendering which i don't want to deal with at this time, and would
-  increase the complexity a lot. wouldn't be an issue if i was using some
-  higher-level libraries like x11 or sdl but this is not the case here
-
-  i could change the window title for the current color selected. this is
-  probably the cleanest way possible
-
-  this is the alternative that i enjoy the least
-
+- [x] add color picker
 - [x] brush draws lines instead of setting a pixel every frame
 - [x] main() requires some cleanup
 - [ ] separate image from canvas to facilitate layers later
@@ -77,6 +26,8 @@ in other words, code like there is no limit, until we reach it
 */
 
 #include <stdbool.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -110,7 +61,7 @@ struct Transform {
 };
 
 struct ColorRGBA {
-	char r, g, b, a;
+	unsigned char r, g, b, a;
 };
 
 struct Canvas {
@@ -143,6 +94,9 @@ struct pie {
 	struct ColorRGBA color;
 };
 
+/* TODO: make proper pcp script */
+static char *colorPaletteCmd[] = {"./pcp.sh", NULL};
+
 const static char *canvasVertSrc =
 	"#version 330 core\n"
 	"layout (location = 0) in vec2 aPos;"
@@ -165,6 +119,10 @@ const static char *canvasFragSrc = "#version 330 core\n"
 				   "void main() {"
 				   "FragColor = texture(tex, texCoord);"
 				   "}";
+/* FDECL */
+
+static void
+askColor(struct ColorRGBA *out);
 
 /* MATH */
 
@@ -217,6 +175,15 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 		GLOBALS.m1Down = action == GLFW_PRESS;
 		break;
 	}
+}
+
+static void
+inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
+{
+	glfwMakeContextCurrent(window);
+	struct pie *pie = glfwGetWindowUserPointer(window);
+	if (key == GLFW_KEY_Q && action == GLFW_RELEASE)
+		askColor(&pie->color);
 }
 
 /* GRAPHICS */
@@ -300,7 +267,6 @@ grCanvasGenShader(void)
 		fprintf(stderr, "%s\n", infolog);
 	}
 
-
 	glUseProgram(shader);
 
 	glDeleteShader(shv);
@@ -364,7 +330,6 @@ grCanvasInitGr(struct Canvas *canvas)
 	canvas->ids.uTr = glGetUniformLocation(canvas->ids.shader, "uTr");
 	canvas->ids.uTex = glGetUniformLocation(canvas->ids.shader, "uTex");
 
-
 	const struct Transform tr = canvas->tr;
 	glUniform4f(canvas->ids.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
 
@@ -390,7 +355,7 @@ grCanvasUpdate(struct Canvas *canvas)
 }
 
 ALWAYS_INLINE unsigned int
-grInit(GLFWwindow **window)
+grInit(struct pie *pie, GLFWwindow **window)
 {
 	glfwInit();
 
@@ -401,9 +366,11 @@ grInit(GLFWwindow **window)
 		return EXIT_FAILURE;
 
 	glfwMakeContextCurrent(*window);
+	glfwSetWindowUserPointer(*window, pie);
 
 	glfwSetMouseButtonCallback(*window, inMouseCallback);
 	glfwSetFramebufferSizeCallback(*window, grFramebufferCallback);
+	glfwSetKeyCallback(*window, inKeyboardCallback);
 
 	glfwSwapInterval(0);
 
@@ -640,7 +607,6 @@ strokePencil(struct Canvas *canvas,
 
 	struct Vec2f cur = v0;
 
-
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
 		size_t id =
@@ -676,6 +642,105 @@ mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
 	}
 }
 
+static bool
+stobyte(const char *str, uint8_t *out)
+{
+	uint8_t n = 0;
+
+	if (str[0] >= 'a' && str[0] <= 'f')
+		n |= (uint8_t)(str[0] - 'a' + 10) << 4;
+	else if (str[0] >= '0' && str[0] <= '9')
+		n |= (uint8_t)(str[0] - '0') << 4;
+	else
+		return false;
+
+	if (str[1] >= 'a' && str[1] <= 'f')
+		n |= (uint8_t)(str[1] - 'a' + 10);
+	else if (str[1] >= '0' && str[1] <= '9')
+		n |= (uint8_t)(str[1] - '0');
+	else
+		return false;
+
+	*out = n;
+	return true;
+}
+
+static bool
+storgba(const char *str, struct ColorRGBA *out)
+{
+	/* TODO: handle malformed strings */
+	union {
+		uint32_t b;
+		struct ColorRGBA c;
+	} color = {0};
+
+	for (size_t i = 0; i < 4; i++)
+	{
+		if (str[i] == '\0' || str[i + 1] == '\0')
+			return false;
+
+		uint8_t byte;
+		if (!stobyte(&str[i * 2], &byte))
+			return false;
+
+		color.b |= (uint32_t)byte << (8 * i);
+	}
+
+	*out = color.c;
+
+	return true;
+}
+
+static void
+askColor(struct ColorRGBA *out)
+{
+	int fd[2];
+
+	if (pipe(fd) == -1)
+	{
+		perror("Pipe failed");
+		return;
+	}
+
+	pid_t pid = fork();
+
+	if (pid < 0)
+	{
+		perror("Fork failed");
+		return;
+	}
+
+	if (pid == 0)
+	{
+		/* child process */
+		close(fd[0]);
+
+		dup2(fd[1], STDOUT_FILENO);
+		close(fd[1]);
+
+		execvp(colorPaletteCmd[0], colorPaletteCmd);
+
+		perror("exec failed");
+		exit(1);
+	} else
+	{
+		close(fd[1]);
+
+		char buffer[16] = {0};
+		if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
+		{
+			close(fd[0]);
+			return;
+		}
+
+		buffer[15] = 0;
+
+		storgba(buffer, out);
+
+		close(fd[0]);
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -683,17 +748,17 @@ main(int argc, char **argv)
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
-	pie.canvas = (struct Canvas){NULL, 50, 50, 0, {0}, {0, 0, 1, 1}, {0}};
+	pie.canvas = (struct Canvas){
+		NULL, 50, 50, 0, {{0}, {0}}, {0, 0, 1, 1}, {0}};
 
 	loadInputFile(&pie);
 
 	GLFWwindow *window;
-	if (grInit(&window) == EXIT_FAILURE)
+	if (grInit(&pie, &window) == EXIT_FAILURE)
 		return EXIT_FAILURE;
 
 	canvasAlign(&pie.canvas);
 	grCanvasInitGr(&pie.canvas);
-
 
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);

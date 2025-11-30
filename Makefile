@@ -3,7 +3,7 @@
 # this file is part of pie
 # see LICENSE file for the license text
 
-CFLAGS := -std=c99 -Os -Wall -Wpedantic
+CFLAGS := -std=c99 -Os -Wall -Wpedantic -Wextra
 PREFIX := /usr/local
 LIBS := -lGL -lglfw -lGLEW -lm
 

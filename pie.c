@@ -75,12 +75,13 @@ struct Canvas {
 	struct {
 		unsigned int texture, shader, uTex, uTr, uWinWidth, uWinHeight;
 	} ids;
+	unsigned int vao;
 };
 
-struct Globals {
+ static struct Globals {
 	bool m0Down, m1Down;
 	float aspectRatio;
-} static GLOBALS;
+} GLOBALS;
 
 struct pie {
 	int argc;
@@ -91,7 +92,7 @@ struct pie {
 	struct ColorRGBA color;
 };
 
-const static char *canvasVertSrc =
+static const char *canvasVertSrc =
 	"#version 330 core\n"
 	"layout (location = 0) in vec2 aPos;"
 	"out vec2 texCoord;"
@@ -109,7 +110,7 @@ const static char *canvasVertSrc =
 	"((gl_VertexID & 0x2) >> 1) * uTex.w + uTex.y);"
 	"}";
 
-const static char *canvasFragSrc = "#version 330 core\n"
+static const char *canvasFragSrc = "#version 330 core\n"
 				   "in vec2 texCoord;"
 				   "out vec4 FragColor;"
 				   "uniform sampler2D tex;"
@@ -292,8 +293,8 @@ grCanvasGenShader(void)
 static unsigned int
 grCanvasGenVAO(void)
 {
-	const static float verts[] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
-	const static unsigned int indices[] = {0, 1, 2, 1, 3, 2};
+	static const  float verts[] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+	static const  unsigned int indices[] = {0, 1, 2, 1, 3, 2};
 
 	unsigned int vao;
 	glGenVertexArrays(1, &vao);
@@ -321,13 +322,14 @@ grCanvasGenVAO(void)
 static void
 grDrawCanvas(struct Canvas *canvas)
 {
+	glBindVertexArray(canvas->vao);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
 ALWAYS_INLINE void
 grCanvasInitGr(struct Canvas *canvas)
 {
-	grCanvasGenVAO();
+	canvas->vao = grCanvasGenVAO();
 
 	grCanvasGenTexture(canvas);
 	canvas->ids.shader = grCanvasGenShader();
@@ -768,7 +770,7 @@ main(int argc, char **argv)
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.canvas = (struct Canvas){
-		NULL, 50, 50, 0, {{0}, {0}}, {0, 0, 1, 1}, {0}};
+		NULL, 50, 50, 0, {{0,0}, {0,0}}, {0, 0, 1, 1}, {0}, 0};
 
 	loadInputFile(&pie);
 

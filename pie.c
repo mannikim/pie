@@ -448,6 +448,14 @@ writeStdoutImage(void *context, void *data, int size)
 	fwrite(data, 1, (size_t)size, stdout);
 }
 
+static void
+printUsage(char *progName)
+{
+	printf("%s -h\n%s <file|-> [infile|-]\n",
+	       progName,
+	       progName);
+}
+
 static inline void
 parseArguments(struct pie *pie, int argc, char **argv)
 {
@@ -460,6 +468,11 @@ parseArguments(struct pie *pie, int argc, char **argv)
 	{
 		fprintf(stderr, "No output file specified\n");
 		exit(EXIT_FAILURE);
+	}
+
+	if (strcmp(argv[1], "-h") == 0) {
+		printUsage(argv[0]);
+		exit(EXIT_SUCCESS);
 	}
 
 	if (strcmp(argv[1], "-") == 0)

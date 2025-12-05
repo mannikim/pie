@@ -27,7 +27,7 @@ in other words, code like there is no limit, until we reach it
 - [ ] draw straight line when shift is pressed
 - [x] render the editor buffer
 - [x] redo grDrawCanvas to support images
-- [ ] cleaup on main() again
+- [x] cleaup on main() again
 
 # stuff for release
 - [x] license
@@ -721,6 +721,21 @@ mouseDown(struct pie *pie,
 	}
 }
 
+static void
+mouseUp(struct Canvas *canvas)
+{
+	for (size_t i = 0; i < (size_t)(canvas->drw.w * canvas->drw.h); i++)
+	{
+		struct ColorRGBA color =
+			mtBlend(canvas->drw.data[i], canvas->img.data[i]);
+		canvas->img.data[i] = color;
+		canvas->drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
+	}
+
+	glBindTexture(GL_TEXTURE_2D, canvas->grImg.tex);
+	grImageUpdate(canvas->img);
+}
+
 static bool
 stobyte(const char *str, uint8_t *out)
 {
@@ -859,6 +874,7 @@ main(int argc, char **argv)
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
 		grDrawImage(pie.canvas.vao);
+
 		if (GLOBALS.m0Down)
 		{
 			glBindTexture(GL_TEXTURE_2D, pie.canvas.grDrw.tex);
@@ -872,28 +888,10 @@ main(int argc, char **argv)
 		{
 			m0Released = false;
 			mouseDown(&pie, pie.canvas.drw, lastM, m);
-		} else
+		} else if (!m0Released)
 		{
-			if (!m0Released)
-			{
-				m0Released = true;
-				for (size_t i = 0;
-				     i < (size_t)(pie.canvas.drw.w *
-						  pie.canvas.drw.h);
-				     i++)
-				{
-					struct ColorRGBA color = mtBlend(
-						pie.canvas.drw.data[i],
-						pie.canvas.img.data[i]);
-					pie.canvas.img.data[i] = color;
-					pie.canvas.drw.data[i] =
-						(struct ColorRGBA){0, 0, 0, 0};
-				}
-
-				glBindTexture(GL_TEXTURE_2D,
-					      pie.canvas.grImg.tex);
-				grImageUpdate(pie.canvas.img);
-			}
+			m0Released = true;
+			mouseUp(&pie.canvas);
 		}
 	}
 

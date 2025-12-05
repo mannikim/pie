@@ -21,15 +21,13 @@ in other words, code like there is no limit, until we reach it
 - [x] add color picker
 - [x] brush draws lines instead of setting a pixel every frame
 - [x] main() requires some cleanup
-- [ ] separate image from canvas to facilitate layers later
+- [x] separate image from canvas to facilitate layers later
 - [x] fix canvas not rendering transparent colors
-- [ ] add blending for pencil
-  - i tried implementing mtBlend directly on the strokePencil and it works,
-  but some points get influenced by alpha much much stronger than it should.
-  my idea is to create a scratch buffer, draw on it first, then update the
-  canvas blending the alpha properly. i also need to rewrite the brush system
-  to account for keydown / keyup so the buffer is applied properly
+- [x] add blending for pencil
 - [ ] draw straight line when shift is pressed
+- [x] render the editor buffer
+- [ ] redo grDrawCanvas to support images
+- [ ] cleaup on main() again
 
 # stuff for release
 - [x] license
@@ -68,20 +66,27 @@ struct ColorRGBA {
 	unsigned char r, g, b, a;
 };
 
+struct Image {
+	struct ColorRGBA *data;
+	int w, h;
+};
+
+struct ImageGRData {
+	unsigned int tex;
+};
+
+struct ImageShaderData {
+	unsigned int id, uTex, uTr, uWinWidth, uWinHeight;
+};
+
 struct Canvas {
-	struct ColorRGBA *pixels;
-
-	int width;
-	int height;
-
+	struct Image img, drw;
 	double scale;
-
 	struct Transform tr;
+	// TODO: wtf is this field
 	struct TextureData tex;
-
-	struct {
-		unsigned int texture, shader, uTex, uTr, uWinWidth, uWinHeight;
-	} ids;
+	struct ImageGRData grImg, grDrw;
+	struct ImageShaderData sh;
 	unsigned int vao;
 };
 
@@ -244,10 +249,10 @@ grFramebufferCallback(GLFWwindow *window, int width, int height)
 }
 
 ALWAYS_INLINE void
-grCanvasGenTexture(struct Canvas *canvas)
+grImageGenTexture(struct Image img, unsigned int *out)
 {
-	glGenTextures(1, &canvas->ids.texture);
-	glBindTexture(GL_TEXTURE_2D, canvas->ids.texture);
+	glGenTextures(1, out);
+	glBindTexture(GL_TEXTURE_2D, *out);
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -257,12 +262,12 @@ grCanvasGenTexture(struct Canvas *canvas)
 	glTexImage2D(GL_TEXTURE_2D,
 		     0,
 		     GL_RGBA,
-		     (int)canvas->width,
-		     (int)canvas->height,
+		     img.w,
+		     img.h,
 		     0,
 		     GL_RGBA,
 		     GL_UNSIGNED_BYTE,
-		     canvas->pixels);
+		     img.data);
 }
 
 inline static unsigned int
@@ -355,40 +360,41 @@ grCanvasInitGr(struct Canvas *canvas)
 {
 	canvas->vao = grCanvasGenVAO();
 
-	grCanvasGenTexture(canvas);
-	canvas->ids.shader = grCanvasGenShader();
-	canvas->ids.uTr = glGetUniformLocation(canvas->ids.shader, "uTr");
-	canvas->ids.uTex = glGetUniformLocation(canvas->ids.shader, "uTex");
-	canvas->ids.uWinWidth =
-		glGetUniformLocation(canvas->ids.shader, "uWinWidth");
-	canvas->ids.uWinHeight =
-		glGetUniformLocation(canvas->ids.shader, "uWinHeight");
+	grImageGenTexture(canvas->img, &canvas->grImg.tex);
+	grImageGenTexture(canvas->img, &canvas->grDrw.tex);
+	canvas->sh.id = grCanvasGenShader();
+	canvas->sh.uTr = glGetUniformLocation(canvas->sh.id, "uTr");
+	canvas->sh.uTex = glGetUniformLocation(canvas->sh.id, "uTex");
+	canvas->sh.uWinWidth =
+		glGetUniformLocation(canvas->sh.id, "uWinWidth");
+	canvas->sh.uWinHeight =
+		glGetUniformLocation(canvas->sh.id, "uWinHeight");
 
 	const struct Transform tr = canvas->tr;
-	glUniform4f(canvas->ids.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
+	glUniform4f(canvas->sh.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
 
-	glUniform4f(canvas->ids.uTex,
+	glUniform4f(canvas->sh.uTex,
 		    canvas->tex.x,
 		    canvas->tex.y,
 		    canvas->tex.w,
 		    canvas->tex.h);
 
-	glUniform1i(canvas->ids.uWinWidth, WIDTH);
-	glUniform1i(canvas->ids.uWinHeight, HEIGHT);
+	glUniform1i(canvas->sh.uWinWidth, WIDTH);
+	glUniform1i(canvas->sh.uWinHeight, HEIGHT);
 }
 
 ALWAYS_INLINE void
-grCanvasUpdate(struct Canvas *canvas)
+grImageUpdate(struct Image img)
 {
 	glTexSubImage2D(GL_TEXTURE_2D,
 			0,
 			0,
 			0,
-			canvas->width,
-			canvas->height,
+			img.w,
+			img.h,
 			GL_RGBA,
 			GL_UNSIGNED_BYTE,
-			canvas->pixels);
+			img.data);
 }
 
 ALWAYS_INLINE bool
@@ -425,13 +431,13 @@ inline static void
 canvasAlign(struct Canvas *canvas)
 {
 	double s = mtScaleFitIn(
-		canvas->width, canvas->height, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
+		canvas->img.w, canvas->img.h, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
 
 	canvas->scale = s;
-	canvas->tr.size.x = canvas->width * s;
-	canvas->tr.size.y = canvas->height * s;
-	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->width * s) / 2.;
-	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->height * s) / 2.;
+	canvas->tr.size.x = canvas->img.w * s;
+	canvas->tr.size.y = canvas->img.h * s;
+	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->img.w * s) / 2.;
+	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
 }
 
 static uint8_t *
@@ -522,21 +528,21 @@ closeProgram(struct pie *pie, struct Canvas *canvas)
 	{
 		stbi_write_png_to_func(writeStdoutImage,
 				       NULL,
-				       canvas->width,
-				       canvas->height,
+				       canvas->img.w,
+				       canvas->img.h,
 				       4,
-				       canvas->pixels,
-				       canvas->width *
-					       (int)sizeof(*canvas->pixels));
+				       canvas->img.data,
+				       canvas->img.w *
+					       (int)sizeof(*canvas->img.data));
 		return;
 	}
 
 	stbi_write_png(pie->argv[1],
-		       canvas->width,
-		       canvas->height,
+		       canvas->img.w,
+		       canvas->img.h,
 		       4,
-		       canvas->pixels,
-		       canvas->width * (int)sizeof(*canvas->pixels));
+		       canvas->img.data,
+		       canvas->img.w * (int)sizeof(*canvas->img.data));
 }
 
 ALWAYS_INLINE void
@@ -556,16 +562,29 @@ loadStdin(struct pie *pie)
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.pixels = (void *)stbi_load_from_memory(data,
-							   (int)size,
-							   &pie->canvas.width,
-							   &pie->canvas.height,
-							   NULL,
-							   4);
+	pie->canvas.img.data =
+		(void *)stbi_load_from_memory(data,
+					      (int)size,
+					      &pie->canvas.img.w,
+					      &pie->canvas.img.h,
+					      NULL,
+					      4);
 	free(data);
 
-	if (pie->canvas.pixels == NULL)
+	if (pie->canvas.img.data == NULL)
 	{
+		fprintf(stderr, "Failed to parse standard input\n");
+		exit(EXIT_FAILURE);
+	}
+
+	pie->canvas.drw.data = calloc(1,
+				      sizeof(*pie->canvas.drw.data) *
+					      (size_t)pie->canvas.img.w *
+					      (size_t)pie->canvas.img.h);
+
+	if (pie->canvas.drw.data == NULL)
+	{
+		free(pie->canvas.img.data);
 		fprintf(stderr, "Failed to parse standard input\n");
 		exit(EXIT_FAILURE);
 	}
@@ -581,10 +600,10 @@ loadArgFile(struct pie *pie)
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.pixels = (void *)stbi_load_from_file(
-		file, &pie->canvas.width, &pie->canvas.height, NULL, 4);
+	pie->canvas.img.data = (void *)stbi_load_from_file(
+		file, &pie->canvas.img.w, &pie->canvas.img.h, NULL, 4);
 
-	if (pie->canvas.pixels == NULL)
+	if (pie->canvas.img.data == NULL)
 	{
 		fclose(file);
 		fprintf(stderr, "Failed to parse input file\n");
@@ -612,21 +631,32 @@ loadInputFile(struct pie *pie)
 	/* new blank canvas */
 
 	unsigned int pixels =
-		(unsigned int)(pie->canvas.height * pie->canvas.width);
-	pie->canvas.pixels = calloc(1, pixels * sizeof(*pie->canvas.pixels));
-
-	if (pie->canvas.pixels == NULL)
+		(unsigned int)(pie->canvas.img.h * pie->canvas.img.w);
+	pie->canvas.img.data = malloc(pixels * sizeof(*pie->canvas.img.data));
+	if (pie->canvas.img.data == NULL)
 	{
 		perror("Failed to create blank image");
 		exit(EXIT_FAILURE);
 	}
 
+	pie->canvas.drw.data = malloc(pixels * sizeof(*pie->canvas.drw.data));
+	if (pie->canvas.drw.data == NULL)
+	{
+		free(pie->canvas.img.data);
+		perror("Failed to create blank image");
+		exit(EXIT_FAILURE);
+	}
+
 	for (unsigned int i = 0; i < pixels; i++)
-		pie->canvas.pixels[i] = BG_COLOR;
+	{
+		pie->canvas.img.data[i] = BG_COLOR;
+		pie->canvas.drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
+	}
 }
 
 static void
-strokePencil(struct Canvas *canvas,
+strokePencil(struct Image read,
+	     struct Image write,
 	     struct ColorRGBA color,
 	     struct Vec2f v0,
 	     struct Vec2f v1)
@@ -654,10 +684,9 @@ strokePencil(struct Canvas *canvas,
 
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
-		size_t id =
-			(size_t)cur.x + (size_t)cur.y * (size_t)canvas->width;
+		size_t id = (size_t)cur.x + (size_t)cur.y * (size_t)read.w;
 
-		canvas->pixels[id] = color;
+		write.data[id] = color;
 
 		cur.x += step.x;
 		cur.y += step.y;
@@ -665,25 +694,30 @@ strokePencil(struct Canvas *canvas,
 }
 
 static void
-mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
+mouseDown(struct pie *pie,
+	  struct Image buffer,
+	  struct Vec2f start,
+	  struct Vec2f end)
 {
 	/* canvas relative start position */
 	struct Vec2f rs;
 	rs.x = (start.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
 	rs.y = (start.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
 
-	if (mtBounds(rs.x, rs.y, 0, 0, pie->canvas.width, pie->canvas.height))
+	if (mtBounds(rs.x, rs.y, 0, 0, pie->canvas.img.w, pie->canvas.img.h))
 	{
 		struct Vec2f re;
 
 		re.x = (end.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
-		re.x = mtClampd(re.x, 0, pie->canvas.width - 1);
+		re.x = mtClampd(re.x, 0, pie->canvas.img.w - 1);
 
 		re.y = (end.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
-		re.y = mtClampd(re.y, 0, pie->canvas.height - 1);
+		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
 
-		strokePencil(&pie->canvas, pie->color, rs, re);
-		grCanvasUpdate(&pie->canvas);
+		strokePencil(pie->canvas.img, buffer, pie->color, rs, re);
+
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
+		grImageUpdate(pie->canvas.drw);
 	}
 }
 
@@ -792,8 +826,15 @@ main(int argc, char **argv)
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
-	pie.canvas = (struct Canvas){
-		NULL, 50, 50, 0, {{0, 0}, {0, 0}}, {0, 0, 1, 1}, {0}, 0};
+	pie.canvas = (struct Canvas){.img = {0, 50, 50},
+				     .drw = {0, 50, 50},
+				     .scale = 0,
+				     .tr = {{0, 0}, {0, 0}},
+				     .tex = {0, 0, 1, 1},
+				     .grImg = {0},
+				     .grDrw = {0},
+				     .sh = {0},
+				     .vao = 0};
 
 	loadInputFile(&pie);
 
@@ -807,6 +848,8 @@ main(int argc, char **argv)
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);
 
+	bool m0Released = true;
+
 	while (!glfwWindowShouldClose(window))
 	{
 		lastM.x = m.x;
@@ -814,20 +857,51 @@ main(int argc, char **argv)
 		glfwGetCursorPos(window, &m.x, &m.y);
 
 		glClear(GL_COLOR_BUFFER_BIT);
-
-		if (GLOBALS.m0Down)
-			mouseDown(&pie, lastM, m);
-
+		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
 		grDrawCanvas(&pie.canvas);
+		if (GLOBALS.m0Down)
+		{
+			glBindTexture(GL_TEXTURE_2D, pie.canvas.grDrw.tex);
+			grDrawCanvas(&pie.canvas);
+		}
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+
+		if (GLOBALS.m0Down)
+		{
+			m0Released = false;
+			mouseDown(&pie, pie.canvas.drw, lastM, m);
+		} else
+		{
+			if (!m0Released)
+			{
+				m0Released = true;
+				for (size_t i = 0;
+				     i < (size_t)(pie.canvas.drw.w *
+						  pie.canvas.drw.h);
+				     i++)
+				{
+					struct ColorRGBA color = mtBlend(
+						pie.canvas.drw.data[i],
+						pie.canvas.img.data[i]);
+					pie.canvas.img.data[i] = color;
+					pie.canvas.drw.data[i] =
+						(struct ColorRGBA){0, 0, 0, 0};
+				}
+
+				glBindTexture(GL_TEXTURE_2D,
+					      pie.canvas.grImg.tex);
+				grImageUpdate(pie.canvas.img);
+			}
+		}
 	}
 
 	closeProgram(&pie, &pie.canvas);
 
 	glfwTerminate();
-	free(pie.canvas.pixels);
+	free(pie.canvas.img.data);
+	free(pie.canvas.drw.data);
 
 	return EXIT_SUCCESS;
 }

@@ -18,6 +18,7 @@ in other words, code like there is no limit, until we reach it
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
+- [ ] properly delete the vao, shaders, etc at the end of the program
 
 # stuff for release
 - [ ] proper project description
@@ -114,6 +115,9 @@ static const char *canvasFragSrc = "#version 330 core\n"
 static void
 askColor(struct ColorRGBA *out);
 
+ALWAYS_INLINE void
+mouseJustUp(struct Canvas *canvas);
+
 /* CONFIG */
 
 #define WIN_TITLE "pie"
@@ -186,12 +190,18 @@ static void
 inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 {
 	(void)mod, (void)window;
+	struct pie* pie = glfwGetWindowUserPointer(window);
 
 	glfwMakeContextCurrent(window);
 	switch (button)
 	{
 	case GLFW_MOUSE_BUTTON_LEFT:
 		GLOBALS.m0Down = action == GLFW_PRESS;
+		
+		if (action == GLFW_PRESS)
+			break;
+
+		mouseJustUp(&pie->canvas);
 		break;
 	case GLFW_MOUSE_BUTTON_RIGHT:
 		GLOBALS.m1Down = action == GLFW_PRESS;
@@ -665,7 +675,7 @@ strokePencil(struct Image read,
 	}
 }
 
-static void
+ALWAYS_INLINE void
 mouseDown(struct pie *pie,
 	  struct Image buffer,
 	  struct Vec2f start,
@@ -693,8 +703,8 @@ mouseDown(struct pie *pie,
 	}
 }
 
-static void
-mouseUp(struct Canvas *canvas)
+ALWAYS_INLINE void
+mouseJustUp(struct Canvas *canvas)
 {
 	for (size_t i = 0; i < (size_t)(canvas->drw.w * canvas->drw.h); i++)
 	{
@@ -832,8 +842,6 @@ main(int argc, char **argv)
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);
 
-	bool m0Released = true;
-
 	while (!glfwWindowShouldClose(window))
 	{
 		lastM.x = m.x;
@@ -854,14 +862,7 @@ main(int argc, char **argv)
 		glfwPollEvents();
 
 		if (GLOBALS.m0Down)
-		{
-			m0Released = false;
 			mouseDown(&pie, pie.canvas.drw, lastM, m);
-		} else if (!m0Released)
-		{
-			m0Released = true;
-			mouseUp(&pie.canvas);
-		}
 	}
 
 	closeProgram(&pie, &pie.canvas);

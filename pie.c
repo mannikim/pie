@@ -17,20 +17,9 @@ this limit should not compromise the project readability or quality
 in other words, code like there is no limit, until we reach it
 
 +++ todo +++
-- [x] add file editing
-- [x] add color picker
-- [x] brush draws lines instead of setting a pixel every frame
-- [x] main() requires some cleanup
-- [x] separate image from canvas to facilitate layers later
-- [x] fix canvas not rendering transparent colors
-- [x] add blending for pencil
 - [ ] draw straight line when shift is pressed
-- [x] render the editor buffer
-- [x] redo grDrawCanvas to support images
-- [x] cleaup on main() again
 
 # stuff for release
-- [x] license
 - [ ] proper project description
 +++ end todo +++
 */

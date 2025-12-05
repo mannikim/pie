@@ -26,7 +26,7 @@ in other words, code like there is no limit, until we reach it
 - [x] add blending for pencil
 - [ ] draw straight line when shift is pressed
 - [x] render the editor buffer
-- [ ] redo grDrawCanvas to support images
+- [x] redo grDrawCanvas to support images
 - [ ] cleaup on main() again
 
 # stuff for release
@@ -349,9 +349,9 @@ grCanvasGenVAO(void)
 }
 
 static void
-grDrawCanvas(struct Canvas *canvas)
+grDrawImage(unsigned int vao)
 {
-	glBindVertexArray(canvas->vao);
+	glBindVertexArray(vao);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
@@ -858,11 +858,11 @@ main(int argc, char **argv)
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
-		grDrawCanvas(&pie.canvas);
+		grDrawImage(pie.canvas.vao);
 		if (GLOBALS.m0Down)
 		{
 			glBindTexture(GL_TEXTURE_2D, pie.canvas.grDrw.tex);
-			grDrawCanvas(&pie.canvas);
+			grDrawImage(pie.canvas.vao);
 		}
 
 		glfwSwapBuffers(window);

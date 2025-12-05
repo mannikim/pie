@@ -43,10 +43,6 @@ struct Vec2f {
 	double x, y;
 };
 
-struct TextureData {
-	double x, y, w, h;
-};
-
 struct Transform {
 	struct Vec2f pos, size;
 };
@@ -65,15 +61,13 @@ struct ImageGRData {
 };
 
 struct ImageShaderData {
-	unsigned int id, uTex, uTr, uWinWidth, uWinHeight;
+	unsigned int id, uTr, uWinWidth, uWinHeight;
 };
 
 struct Canvas {
 	struct Image img, drw;
 	double scale;
 	struct Transform tr;
-	// TODO: wtf is this field
-	struct TextureData tex;
 	struct ImageGRData grImg, grDrw;
 	struct ImageShaderData sh;
 	unsigned int vao;
@@ -98,7 +92,6 @@ static const char *canvasVertSrc =
 	"layout (location = 0) in vec2 aPos;"
 	"out vec2 texCoord;"
 	"uniform vec4 uTr;"
-	"uniform vec4 uTex;"
 	"uniform int uWinWidth;"
 	"uniform int uWinHeight;"
 	"void main() {"
@@ -106,9 +99,7 @@ static const char *canvasVertSrc =
 	"vec2(aPos.x * uTr.z, aPos.y * uTr.w);"
 	"gl_Position = vec4(outPos.x / (uWinWidth / 2) - 1,"
 	"outPos.y / (uWinHeight / -2) + 1, 0, 1);"
-	"texCoord = vec2("
-	"(gl_VertexID & 0x1) * uTex.z + uTex.x,"
-	"((gl_VertexID & 0x2) >> 1) * uTex.w + uTex.y);"
+	"texCoord = vec2((gl_VertexID & 0x1), ((gl_VertexID & 0x2) >> 1));"
 	"}";
 
 static const char *canvasFragSrc = "#version 330 core\n"
@@ -353,7 +344,6 @@ grCanvasInitGr(struct Canvas *canvas)
 	grImageGenTexture(canvas->img, &canvas->grDrw.tex);
 	canvas->sh.id = grCanvasGenShader();
 	canvas->sh.uTr = glGetUniformLocation(canvas->sh.id, "uTr");
-	canvas->sh.uTex = glGetUniformLocation(canvas->sh.id, "uTex");
 	canvas->sh.uWinWidth =
 		glGetUniformLocation(canvas->sh.id, "uWinWidth");
 	canvas->sh.uWinHeight =
@@ -361,13 +351,6 @@ grCanvasInitGr(struct Canvas *canvas)
 
 	const struct Transform tr = canvas->tr;
 	glUniform4f(canvas->sh.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
-
-	glUniform4f(canvas->sh.uTex,
-		    canvas->tex.x,
-		    canvas->tex.y,
-		    canvas->tex.w,
-		    canvas->tex.h);
-
 	glUniform1i(canvas->sh.uWinWidth, WIDTH);
 	glUniform1i(canvas->sh.uWinHeight, HEIGHT);
 }
@@ -832,7 +815,6 @@ main(int argc, char **argv)
 				     .drw = {0, 50, 50},
 				     .scale = 0,
 				     .tr = {{0, 0}, {0, 0}},
-				     .tex = {0, 0, 1, 1},
 				     .grImg = {0},
 				     .grDrw = {0},
 				     .sh = {0},

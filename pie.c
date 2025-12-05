@@ -805,7 +805,6 @@ askColor(struct ColorRGBA *out)
 
 	if (pid == 0)
 	{
-		/* child process */
 		close(fd[0]);
 
 		dup2(fd[1], STDOUT_FILENO);
@@ -814,24 +813,23 @@ askColor(struct ColorRGBA *out)
 		execvp(colorPaletteCmd[0], colorPaletteCmd);
 
 		perror("exec failed");
-		exit(1);
-	} else
-	{
-		close(fd[1]);
-
-		char buffer[16] = {0};
-		if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
-		{
-			close(fd[0]);
-			return;
-		}
-
-		buffer[15] = 0;
-
-		storgba(buffer, out);
-
-		close(fd[0]);
+		_exit(EXIT_FAILURE);
 	}
+
+	close(fd[1]);
+
+	char buffer[16] = {0};
+	if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
+	{
+		close(fd[0]);
+		return;
+	}
+
+	buffer[15] = 0;
+
+	storgba(buffer, out);
+
+	close(fd[0]);
 }
 
 int

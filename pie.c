@@ -190,14 +190,14 @@ static void
 inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 {
 	(void)mod, (void)window;
-	struct pie* pie = glfwGetWindowUserPointer(window);
+	struct pie *pie = glfwGetWindowUserPointer(window);
 
 	glfwMakeContextCurrent(window);
 	switch (button)
 	{
 	case GLFW_MOUSE_BUTTON_LEFT:
 		GLOBALS.m0Down = action == GLFW_PRESS;
-		
+
 		if (action == GLFW_PRESS)
 			break;
 
@@ -800,16 +800,20 @@ askColor(struct ColorRGBA *out)
 
 	close(fd[1]);
 
-	char buffer[16] = {0};
+	char buffer[9] = {0};
 	if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
 	{
 		close(fd[0]);
+		fprintf(stderr, "Failed to read from color picker\n");
 		return;
 	}
 
-	buffer[15] = 0;
+	buffer[8] = 0;
 
-	storgba(buffer, out);
+	if (!storgba(buffer, out))
+	{
+		fprintf(stderr, "Failed to parse color %s\n", buffer);
+	}
 
 	close(fd[0]);
 }

@@ -18,7 +18,7 @@ in other words, code like there is no limit, until we reach it
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
-- [ ] properly delete the vao, shaders, etc at the end of the program
+- [x] properly delete the vao, shaders, etc at the end of the program
 
 # stuff for release
 - [ ] proper project description
@@ -870,6 +870,11 @@ main(int argc, char **argv)
 	}
 
 	closeProgram(&pie, &pie.canvas);
+
+	glDeleteTextures(1, &pie.canvas.grImg.tex);
+	glDeleteTextures(1, &pie.canvas.grDrw.tex);
+	glDeleteVertexArrays(1, &pie.canvas.vao);
+	glDeleteProgram(pie.canvas.sh.id);
 
 	glfwTerminate();
 	free(pie.canvas.img.data);

@@ -570,6 +570,9 @@ loadStdin(struct pie *pie)
 		fprintf(stderr, "Failed to parse standard input\n");
 		exit(EXIT_FAILURE);
 	}
+
+	pie->canvas.drw.w = pie->canvas.img.w;
+	pie->canvas.drw.h = pie->canvas.img.h;
 }
 
 ALWAYS_INLINE void
@@ -585,14 +588,28 @@ loadArgFile(struct pie *pie)
 	pie->canvas.img.data = (void *)stbi_load_from_file(
 		file, &pie->canvas.img.w, &pie->canvas.img.h, NULL, 4);
 
+	fclose(file);
+
 	if (pie->canvas.img.data == NULL)
 	{
-		fclose(file);
 		fprintf(stderr, "Failed to parse input file\n");
 		exit(EXIT_FAILURE);
 	}
 
-	fclose(file);
+	pie->canvas.drw.data = calloc(1,
+				      sizeof(*pie->canvas.drw.data) *
+					      (size_t)pie->canvas.img.w *
+					      (size_t)pie->canvas.img.h);
+
+	if (pie->canvas.drw.data == NULL)
+	{
+		free(pie->canvas.img.data);
+		fprintf(stderr, "Failed to parse standard input\n");
+		exit(EXIT_FAILURE);
+	}
+
+	pie->canvas.drw.w = pie->canvas.img.w;
+	pie->canvas.drw.h = pie->canvas.img.h;
 }
 
 static void

@@ -459,9 +459,9 @@ writeStdoutImage(void *context, void *data, int size)
 }
 
 static void
-printUsage(char *progName)
+printUsage(const char *progName)
 {
-	printf("%s -h\n%s <file|-> [infile|-]\n", progName, progName);
+	printf("%s -h\n%s <outfile|-> [infile|-]\n", progName, progName);
 }
 
 static inline void
@@ -471,6 +471,12 @@ parseArguments(struct pie *pie, int argc, char **argv)
 
 	pie->argc = argc;
 	pie->argv = argv;
+
+	if (argc >= 4)
+	{
+		fprintf(stderr, "Excess arguments.\n");
+		exit(EXIT_FAILURE);
+	}
 
 	if (argc <= 1)
 	{

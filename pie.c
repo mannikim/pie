@@ -429,22 +429,22 @@ readFileFull(FILE *file, size_t *outSize)
 	int c = fgetc(file);
 	while (c != EOF)
 	{
-		if (size >= capacity)
+		if (size < capacity)
 		{
-			capacity *= 2;
-			unsigned char *newBuffer = realloc(buffer, capacity);
-
-			if (!newBuffer)
-			{
-				free(buffer);
-				return NULL;
-			}
-
-			buffer = newBuffer;
+			buffer[size++] = (unsigned char)c;
+			c = fgetc(file);
+			continue;
 		}
 
-		buffer[size++] = (unsigned char)c;
-		c = fgetc(file);
+		capacity *= 2;
+		unsigned char *newBuffer = realloc(buffer, capacity);
+		if (!newBuffer)
+		{
+			free(buffer);
+			return NULL;
+		}
+
+		buffer = newBuffer;
 	}
 
 	*outSize = size;
@@ -501,29 +501,29 @@ parseArguments(struct pie *pie, int argc, char **argv)
 ALWAYS_INLINE void
 closeProgram(struct pie *pie, struct Canvas *canvas)
 {
-	if (pie->useStdout)
+	if (!pie->useStdout)
 	{
-		stbi_write_png_to_func(writeStdoutImage,
-				       NULL,
-				       canvas->img.w,
-				       canvas->img.h,
-				       4,
-				       canvas->img.data,
-				       canvas->img.w *
-					       (int)sizeof(*canvas->img.data));
+		stbi_write_png(pie->argv[1],
+			       canvas->img.w,
+			       canvas->img.h,
+			       4,
+			       canvas->img.data,
+			       canvas->img.w * (int)sizeof(*canvas->img.data));
 		return;
 	}
 
-	stbi_write_png(pie->argv[1],
-		       canvas->img.w,
-		       canvas->img.h,
-		       4,
-		       canvas->img.data,
-		       canvas->img.w * (int)sizeof(*canvas->img.data));
+	int stride = canvas->img.w * (int)sizeof(*canvas->img.data);
+	stbi_write_png_to_func(writeStdoutImage,
+			       NULL,
+			       canvas->img.w,
+			       canvas->img.h,
+			       4,
+			       canvas->img.data,
+			       stride);
 }
 
 ALWAYS_INLINE void
-loadStdin(struct pie *pie)
+loadStdin(struct Canvas *canvas)
 {
 	size_t size;
 
@@ -539,72 +539,63 @@ loadStdin(struct pie *pie)
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.img.data =
-		(void *)stbi_load_from_memory(data,
-					      (int)size,
-					      &pie->canvas.img.w,
-					      &pie->canvas.img.h,
-					      NULL,
-					      4);
+	canvas->img.data = (void *)stbi_load_from_memory(
+		data, (int)size, &canvas->img.w, &canvas->img.h, NULL, 4);
 	free(data);
 
-	if (pie->canvas.img.data == NULL)
+	if (canvas->img.data == NULL)
 	{
 		fprintf(stderr, "Failed to parse standard input\n");
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.drw.data = calloc(1,
-				      sizeof(*pie->canvas.drw.data) *
-					      (size_t)pie->canvas.img.w *
-					      (size_t)pie->canvas.img.h);
+	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
+	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
 
-	if (pie->canvas.drw.data == NULL)
+	if (canvas->drw.data == NULL)
 	{
-		free(pie->canvas.img.data);
+		free(canvas->img.data);
 		fprintf(stderr, "Failed to parse standard input\n");
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.drw.w = pie->canvas.img.w;
-	pie->canvas.drw.h = pie->canvas.img.h;
+	canvas->drw.w = canvas->img.w;
+	canvas->drw.h = canvas->img.h;
 }
 
 ALWAYS_INLINE void
-loadArgFile(struct pie *pie)
+loadArgFile(char *filename, struct Canvas *canvas)
 {
-	FILE *file = fopen(pie->argv[2], "r");
+	FILE *file = fopen(filename, "r");
 	if (file == NULL)
 	{
 		perror("Failed to open input file");
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.img.data = (void *)stbi_load_from_file(
-		file, &pie->canvas.img.w, &pie->canvas.img.h, NULL, 4);
+	canvas->img.data = (void *)stbi_load_from_file(
+		file, &canvas->img.w, &canvas->img.h, NULL, 4);
 
 	fclose(file);
 
-	if (pie->canvas.img.data == NULL)
+	if (canvas->img.data == NULL)
 	{
 		fprintf(stderr, "Failed to parse input file\n");
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.drw.data = calloc(1,
-				      sizeof(*pie->canvas.drw.data) *
-					      (size_t)pie->canvas.img.w *
-					      (size_t)pie->canvas.img.h);
+	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
+	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
 
-	if (pie->canvas.drw.data == NULL)
+	if (canvas->drw.data == NULL)
 	{
-		free(pie->canvas.img.data);
+		free(canvas->img.data);
 		fprintf(stderr, "Failed to parse standard input\n");
 		exit(EXIT_FAILURE);
 	}
 
-	pie->canvas.drw.w = pie->canvas.img.w;
-	pie->canvas.drw.h = pie->canvas.img.h;
+	canvas->drw.w = canvas->img.w;
+	canvas->drw.h = canvas->img.h;
 }
 
 static void
@@ -612,13 +603,13 @@ loadInputFile(struct pie *pie)
 {
 	if (pie->useStdin)
 	{
-		loadStdin(pie);
+		loadStdin(&pie->canvas);
 		return;
 	}
 
 	if (pie->hasInput)
 	{
-		loadArgFile(pie);
+		loadArgFile(pie->argv[2], &pie->canvas);
 		return;
 	}
 
@@ -837,14 +828,16 @@ main(int argc, char **argv)
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
-	pie.canvas = (struct Canvas){.img = {0, 50, 50},
-				     .drw = {0, 50, 50},
-				     .scale = 0,
-				     .tr = {{0, 0}, {0, 0}},
-				     .grImg = {0},
-				     .grDrw = {0},
-				     .sh = {0},
-				     .vao = 0};
+	pie.canvas = (struct Canvas){
+		.img = {0, 50, 50},
+		.drw = {0, 50, 50},
+		.scale = 0,
+		.tr = {{0, 0}, {0, 0}},
+		.grImg = {0},
+		.grDrw = {0},
+		.sh = {0},
+		.vao = 0,
+	};
 
 	loadInputFile(&pie);
 

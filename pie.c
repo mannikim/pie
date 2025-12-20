@@ -74,11 +74,6 @@ struct Canvas {
 	unsigned int vao;
 };
 
-static struct Globals {
-	bool m0Down, m1Down;
-	float aspectRatio;
-} GLOBALS;
-
 struct pie {
 	int argc;
 	char **argv;
@@ -86,6 +81,8 @@ struct pie {
 
 	struct Canvas canvas;
 	struct ColorRGBA color;
+
+	bool m0Down;
 };
 
 static const char *canvasVertSrc =
@@ -195,15 +192,12 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 	switch (button)
 	{
 	case GLFW_MOUSE_BUTTON_LEFT:
-		GLOBALS.m0Down = action == GLFW_PRESS;
+		pie->m0Down = action == GLFW_PRESS;
 
 		if (action == GLFW_PRESS)
 			break;
 
 		mouseJustUp(&pie->canvas);
-		break;
-	case GLFW_MOUSE_BUTTON_RIGHT:
-		GLOBALS.m1Down = action == GLFW_PRESS;
 		break;
 	}
 }
@@ -867,7 +861,7 @@ main(int argc, char **argv)
 		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
 		grDrawImage(pie.canvas.vao);
 
-		if (GLOBALS.m0Down)
+		if (pie.m0Down)
 		{
 			glBindTexture(GL_TEXTURE_2D, pie.canvas.grDrw.tex);
 			grDrawImage(pie.canvas.vao);
@@ -876,7 +870,7 @@ main(int argc, char **argv)
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
-		if (GLOBALS.m0Down)
+		if (pie.m0Down)
 			mouseDown(&pie, pie.canvas.drw, lastM, m);
 	}
 

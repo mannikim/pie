@@ -18,7 +18,7 @@ in other words, code like there is no limit, until we reach it
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
-- [x] properly delete the vao, shaders, etc at the end of the program
+- [ ] option to change brush size
 
 # stuff for release
 - [ ] proper project description

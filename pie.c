@@ -634,6 +634,66 @@ loadInputFile(struct pie *pie)
 }
 
 static void
+strokeImage(struct Image read,
+	    struct Image write,
+	    struct Image brush,
+	    struct Vec2f v0,
+	    struct Vec2f v1)
+{
+	/* TODO isolate this cp */
+	struct Vec2f step = {0};
+
+	v0.x = floor(v0.x);
+	v0.y = floor(v0.y);
+	v1.x = floor(v1.x);
+	v1.y = floor(v1.y);
+
+	struct Vec2f d = {v1.x - v0.x, v1.y - v0.y};
+	struct Vec2f absd = {fabs(d.x), fabs(d.y)};
+	double count;
+
+	if (absd.x > absd.y)
+		count = absd.x;
+	else
+		count = absd.y;
+
+	step.x = d.x / count;
+	step.y = d.y / count;
+
+	struct Vec2f cur = v0;
+
+	for (size_t i = 0; i < (size_t)(count + 1); i++)
+	{
+		for (size_t j = 0; j < (size_t)(brush.w * brush.h); j++)
+		{
+			struct Vec2f bp = {
+				(double)(j % (size_t)brush.w),
+				(double)(size_t)(j / (size_t)brush.w)};
+			struct Vec2f fp = {bp.x + cur.x, bp.y + cur.y};
+
+			/* TODO optimize these checks */
+
+			if (fp.x < 0)
+				continue;
+			if (fp.x >= read.w)
+				continue;
+			if (fp.y < 0)
+				continue;
+			if (fp.y >= read.h)
+				continue;
+
+			size_t id =
+				(size_t)fp.x + (size_t)fp.y * (size_t)read.w;
+			size_t bid = (size_t)(bp.x + bp.y * brush.w);
+			write.data[id] = brush.data[bid];
+		}
+
+		cur.x += step.x;
+		cur.y += step.y;
+	}
+}
+
+static void
 strokePencil(struct Image read,
 	     struct Image write,
 	     struct ColorRGBA color,
@@ -844,6 +904,20 @@ main(int argc, char **argv)
 
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);
+
+	/* TODO: temp */
+	struct Image brushImg = {.w = 2,
+				 .h = 1,
+				 .data = (struct ColorRGBA[]){
+					 {0, 0, 0, 0xff}, {0xff, 0, 0, 0xff}}};
+
+	strokeImage(pie.canvas.img,
+		    pie.canvas.drw,
+		    brushImg,
+		    (struct Vec2f){5, 5},
+		    (struct Vec2f){14, 6});
+
+	mouseJustUp(&pie.canvas);
 
 	while (!glfwWindowShouldClose(window))
 	{

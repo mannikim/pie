@@ -44,6 +44,10 @@ struct Vec2f {
 	double x, y;
 };
 
+struct Vec2i {
+	int x, y;
+};
+
 struct Transform {
 	struct Vec2f pos, size;
 };
@@ -172,6 +176,14 @@ mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 	out.a = (uint8_t)alpha * 0xff;
 
 	return out;
+}
+
+ALWAYS_INLINE double
+mtStepCount(struct Vec2i d, double w, double h)
+{
+	if (d.x > d.y)
+		return d.x / w;
+	return d.y / h;
 }
 
 /* INPUT */
@@ -637,30 +649,14 @@ static void
 strokeImage(struct Image read,
 	    struct Image write,
 	    struct Image brush,
-	    struct Vec2f v0,
-	    struct Vec2f v1)
+	    struct Vec2i v0,
+	    struct Vec2i v1)
 {
-	/* TODO isolate this cp */
-	struct Vec2f step = {0};
-
-	v0.x = floor(v0.x);
-	v0.y = floor(v0.y);
-	v1.x = floor(v1.x);
-	v1.y = floor(v1.y);
-
-	struct Vec2f d = {v1.x - v0.x, v1.y - v0.y};
-	struct Vec2f absd = {fabs(d.x), fabs(d.y)};
-	double count;
-
-	if (absd.x > absd.y)
-		count = absd.x;
-	else
-		count = absd.y;
-
-	step.x = d.x / count;
-	step.y = d.y / count;
-
-	struct Vec2f cur = v0;
+	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
+	struct Vec2i absd = {abs(d.x), abs(d.y)};
+	double count = mtStepCount(absd, brush.w / 2., brush.h / 2.);
+	struct Vec2f step = {d.x / count, d.y / count};
+	struct Vec2f cur = {v0.x, v0.y};
 
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
@@ -669,7 +665,9 @@ strokeImage(struct Image read,
 			struct Vec2f bp = {
 				(double)(j % (size_t)brush.w),
 				(double)(size_t)(j / (size_t)brush.w)};
-			struct Vec2f fp = {bp.x + cur.x, bp.y + cur.y};
+			struct Vec2f fp = {
+				bp.x + cur.x - (double)(int)(brush.w / 2),
+				bp.y + cur.y - (double)(int)(brush.h / 2)};
 
 			/* TODO optimize these checks */
 
@@ -697,29 +695,14 @@ static void
 strokePencil(struct Image read,
 	     struct Image write,
 	     struct ColorRGBA color,
-	     struct Vec2f v0,
-	     struct Vec2f v1)
+	     struct Vec2i v0,
+	     struct Vec2i v1)
 {
-	struct Vec2f step = {0};
-
-	v0.x = floor(v0.x);
-	v0.y = floor(v0.y);
-	v1.x = floor(v1.x);
-	v1.y = floor(v1.y);
-
-	struct Vec2f d = {v1.x - v0.x, v1.y - v0.y};
-	struct Vec2f absd = {fabs(d.x), fabs(d.y)};
-	double count;
-
-	if (absd.x > absd.y)
-		count = absd.x;
-	else
-		count = absd.y;
-
-	step.x = d.x / count;
-	step.y = d.y / count;
-
-	struct Vec2f cur = v0;
+	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
+	struct Vec2i absd = {abs(d.x), abs(d.y)};
+	double count = absd.x > absd.y ? absd.x : absd.y;
+	struct Vec2f step = {d.x / count, d.y / count};
+	struct Vec2f cur = {v0.x, v0.y};
 
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
@@ -753,7 +736,11 @@ mouseDown(struct pie *pie,
 		re.y = (end.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
 		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
 
-		strokePencil(pie->canvas.img, buffer, pie->color, rs, re);
+		strokePencil(pie->canvas.img,
+			    buffer,
+			    pie->color,
+			    (struct Vec2i){(int)rs.x, (int)rs.y},
+			    (struct Vec2i){(int)re.x, (int)re.y});
 
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
 		grImageUpdate(pie->canvas.drw);
@@ -906,16 +893,18 @@ main(int argc, char **argv)
 	glfwGetCursorPos(window, &m.x, &m.y);
 
 	/* TODO: temp */
-	struct Image brushImg = {.w = 2,
-				 .h = 1,
-				 .data = (struct ColorRGBA[]){
-					 {0, 0, 0, 0xff}, {0xff, 0, 0, 0xff}}};
-
+	struct Image brushImg = {
+		.w = 2,
+		.h = 2,
+		.data = (struct ColorRGBA[]){{0, 0, 0, 0xff},
+					     {0xff, 0, 0, 0xff},
+					     {0, 0xff, 0, 0xff},
+					     {0xff, 0xff, 0, 0xff}}};
 	strokeImage(pie.canvas.img,
 		    pie.canvas.drw,
 		    brushImg,
-		    (struct Vec2f){5, 5},
-		    (struct Vec2f){14, 6});
+		    (struct Vec2i){31, 39},
+		    (struct Vec2i){26, 25});
 
 	mouseJustUp(&pie.canvas);
 

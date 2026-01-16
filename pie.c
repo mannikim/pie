@@ -161,6 +161,18 @@ mtClampd(double x, double min, double max)
 	return x > max ? max : (x < min ? min : x);
 }
 
+ALWAYS_INLINE int
+mtMax(int a, int b)
+{
+	return a > b ? a : b;
+}
+
+ALWAYS_INLINE int
+mtMin(int a, int b)
+{
+	return a < b ? a : b;
+}
+
 ALWAYS_INLINE struct ColorRGBA
 mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 {
@@ -658,33 +670,23 @@ strokeImage(struct Image read,
 	struct Vec2f step = {d.x / count, d.y / count};
 	struct Vec2f cur = {v0.x, v0.y};
 
+	int hw = brush.w / 2, hh = brush.h / 2;
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
-		for (size_t j = 0; j < (size_t)(brush.w * brush.h); j++)
-		{
-			struct Vec2f bp = {
-				(double)(j % (size_t)brush.w),
-				(double)(size_t)(j / (size_t)brush.w)};
-			struct Vec2f fp = {
-				bp.x + cur.x - (double)(int)(brush.w / 2),
-				bp.y + cur.y - (double)(int)(brush.h / 2)};
+		int x = mtMax(hw - (int)cur.x, 0);
+		int w = mtMin(hw - (int)cur.x + read.w, brush.w);
+		int y = mtMax(hh - (int)cur.y, 0);
+		int h = mtMin(hh - (int)cur.y + read.h, brush.w);
 
-			/* TODO optimize these checks */
-
-			if (fp.x < 0)
-				continue;
-			if (fp.x >= read.w)
-				continue;
-			if (fp.y < 0)
-				continue;
-			if (fp.y >= read.h)
-				continue;
-
-			size_t id =
-				(size_t)fp.x + (size_t)fp.y * (size_t)read.w;
-			size_t bid = (size_t)(bp.x + bp.y * brush.w);
-			write.data[id] = brush.data[bid];
-		}
+		for (int j = y; j < h; j++)
+			for (int k = x; k < w; k++)
+			{
+				struct Vec2i fp = {k + (int)cur.x - hw,
+						   j + (int)cur.y - hh};
+				size_t id = (size_t)(fp.x + fp.y * read.w);
+				size_t bid = (size_t)(k + j * brush.w);
+				write.data[id] = brush.data[bid];
+			}
 
 		cur.x += step.x;
 		cur.y += step.y;
@@ -737,10 +739,10 @@ mouseDown(struct pie *pie,
 		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
 
 		strokePencil(pie->canvas.img,
-			    buffer,
-			    pie->color,
-			    (struct Vec2i){(int)rs.x, (int)rs.y},
-			    (struct Vec2i){(int)re.x, (int)re.y});
+			     buffer,
+			     pie->color,
+			     (struct Vec2i){(int)rs.x, (int)rs.y},
+			     (struct Vec2i){(int)re.x, (int)re.y});
 
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
 		grImageUpdate(pie->canvas.drw);
@@ -903,8 +905,8 @@ main(int argc, char **argv)
 	strokeImage(pie.canvas.img,
 		    pie.canvas.drw,
 		    brushImg,
-		    (struct Vec2i){31, 39},
-		    (struct Vec2i){26, 25});
+		    (struct Vec2i){0, 0},
+		    (struct Vec2i){16, 0});
 
 	mouseJustUp(&pie.canvas);
 

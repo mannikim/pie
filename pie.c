@@ -717,6 +717,41 @@ strokePencil(struct Image read,
 	}
 }
 
+static void
+strokeSizePencil(struct Image read,
+	     struct Image write,
+	     struct ColorRGBA color,
+	     double size,
+	     struct Vec2i v0,
+	     struct Vec2i v1)
+{
+	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
+	struct Vec2i absd = {abs(d.x), abs(d.y)};
+	double count = absd.x > absd.y ? absd.x : absd.y;
+	struct Vec2f step = {d.x / count, d.y / count};
+	struct Vec2f cur = {v0.x, v0.y};
+
+	for (size_t i = 0; i < (size_t)(count + 1); i++)
+	{
+		int x = mtMax((int)(size - cur.x), 0);
+		int w = mtMin((int)(size - cur.x) + read.w, (int)(size * 2));
+		int y = mtMax((int)(size - cur.y), 0);
+		int h = mtMin((int)(size - cur.y) + read.h, (int)(size * 2));
+
+		for (int j = y; j < h; j++)
+			for (int k = x; k < w; k++)
+			{
+				struct Vec2i fp = {k + (int)cur.x - (int)size,
+						   j + (int)cur.y - (int)size};
+				size_t id = (size_t)(fp.x + fp.y * read.w);
+				write.data[id] = color;
+			}
+
+		cur.x += step.x;
+		cur.y += step.y;
+	}
+}
+
 ALWAYS_INLINE void
 mouseDown(struct pie *pie,
 	  struct Image buffer,
@@ -738,9 +773,10 @@ mouseDown(struct pie *pie,
 		re.y = (end.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
 		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
 
-		strokePencil(pie->canvas.img,
+		strokeSizePencil(pie->canvas.img,
 			     buffer,
 			     pie->color,
+			     1,
 			     (struct Vec2i){(int)rs.x, (int)rs.y},
 			     (struct Vec2i){(int)re.x, (int)re.y});
 

@@ -85,6 +85,7 @@ struct pie {
 
 	struct Canvas canvas;
 	struct ColorRGBA color;
+	double brushSize;
 
 	bool m0Down;
 };
@@ -229,6 +230,10 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == GLFW_KEY_Q && action == GLFW_RELEASE)
 		askColor(&pie->color);
+	if (key == GLFW_KEY_O && action == GLFW_RELEASE)
+		pie->brushSize += .5;
+	if (key == GLFW_KEY_P && action == GLFW_RELEASE)
+		pie->brushSize -= .5;
 }
 
 /* GRAPHICS */
@@ -719,11 +724,11 @@ strokePencil(struct Image read,
 
 static void
 strokeSizePencil(struct Image read,
-	     struct Image write,
-	     struct ColorRGBA color,
-	     double size,
-	     struct Vec2i v0,
-	     struct Vec2i v1)
+		 struct Image write,
+		 struct ColorRGBA color,
+		 double size,
+		 struct Vec2i v0,
+		 struct Vec2i v1)
 {
 	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2i absd = {abs(d.x), abs(d.y)};
@@ -774,11 +779,11 @@ mouseDown(struct pie *pie,
 		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
 
 		strokeSizePencil(pie->canvas.img,
-			     buffer,
-			     pie->color,
-			     1,
-			     (struct Vec2i){(int)rs.x, (int)rs.y},
-			     (struct Vec2i){(int)re.x, (int)re.y});
+				 buffer,
+				 pie->color,
+				 pie->brushSize,
+				 (struct Vec2i){(int)rs.x, (int)rs.y},
+				 (struct Vec2i){(int)re.x, (int)re.y});
 
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
 		grImageUpdate(pie->canvas.drw);
@@ -907,6 +912,7 @@ main(int argc, char **argv)
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
+	pie.brushSize = .5;
 	pie.canvas = (struct Canvas){
 		.img = {0, 50, 50},
 		.drw = {0, 50, 50},

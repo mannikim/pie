@@ -18,7 +18,7 @@ in other words, code like there is no limit, until we reach it
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
-- [ ] option to change brush size
+- [x] option to change brush size
 
 # stuff for release
 - [ ] proper project description
@@ -199,6 +199,12 @@ mtStepCount(struct Vec2i d, double w, double h)
 	return d.y / h;
 }
 
+ALWAYS_INLINE struct Vec2f
+mtScreen2Canvas(struct Vec2f mp, struct Vec2f cp, double cs)
+{
+	return (struct Vec2f){(mp.x - cp.x) / cs, (mp.y - cp.y) / cs};
+}
+
 /* INPUT */
 
 static void
@@ -230,10 +236,10 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == GLFW_KEY_Q && action == GLFW_RELEASE)
 		askColor(&pie->color);
-	if (key == GLFW_KEY_O && action == GLFW_RELEASE)
-		pie->brushSize += .5;
-	if (key == GLFW_KEY_P && action == GLFW_RELEASE)
+	if (key == GLFW_KEY_O && action != GLFW_RELEASE)
 		pie->brushSize -= .5;
+	if (key == GLFW_KEY_P && action != GLFW_RELEASE)
+		pie->brushSize += .5;
 }
 
 /* GRAPHICS */
@@ -524,6 +530,7 @@ parseArguments(struct pie *pie, int argc, char **argv)
 ALWAYS_INLINE void
 closeProgram(struct pie *pie, struct Canvas *canvas)
 {
+	fputc('\n', stderr);
 	if (!pie->useStdout)
 	{
 		stbi_write_png(pie->argv[1],
@@ -730,6 +737,7 @@ strokeSizePencil(struct Image read,
 		 struct Vec2i v0,
 		 struct Vec2i v1)
 {
+	size /= 2;
 	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2i absd = {abs(d.x), abs(d.y)};
 	double count = absd.x > absd.y ? absd.x : absd.y;
@@ -763,10 +771,8 @@ mouseDown(struct pie *pie,
 	  struct Vec2f start,
 	  struct Vec2f end)
 {
-	/* canvas relative start position */
-	struct Vec2f rs;
-	rs.x = (start.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
-	rs.y = (start.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
+	struct Vec2f rs =
+		mtScreen2Canvas(start, pie->canvas.tr.pos, pie->canvas.scale);
 
 	if (mtBounds(rs.x, rs.y, 0, 0, pie->canvas.img.w, pie->canvas.img.h))
 	{
@@ -912,7 +918,7 @@ main(int argc, char **argv)
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
-	pie.brushSize = .5;
+	pie.brushSize = 1;
 	pie.canvas = (struct Canvas){
 		.img = {0, 50, 50},
 		.drw = {0, 50, 50},
@@ -957,6 +963,15 @@ main(int argc, char **argv)
 		lastM.x = m.x;
 		lastM.y = m.y;
 		glfwGetCursorPos(window, &m.x, &m.y);
+		struct Vec2f rs = mtScreen2Canvas(
+			m, pie.canvas.tr.pos, pie.canvas.scale);
+		fprintf(stderr,
+			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f ",
+			pie.canvas.img.w,
+			pie.canvas.img.h,
+			pie.brushSize,
+			rs.x,
+			rs.y);
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);

@@ -154,13 +154,7 @@ mtScaleFitIn(double w0, double h0, double w1, double h1)
 ALWAYS_INLINE double
 mtClampd(double x, double min, double max)
 {
-	if (x > max)
-		return max;
-
-	if (x < min)
-		return min;
-
-	return x;
+	return x > max ? max : (x < min ? min : x);
 }
 
 ALWAYS_INLINE struct ColorRGBA

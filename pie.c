@@ -942,22 +942,6 @@ main(int argc, char **argv)
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);
 
-	/* TODO: temp */
-	struct Image brushImg = {
-		.w = 2,
-		.h = 2,
-		.data = (struct ColorRGBA[]){{0, 0, 0, 0xff},
-					     {0xff, 0, 0, 0xff},
-					     {0, 0xff, 0, 0xff},
-					     {0xff, 0xff, 0, 0xff}}};
-	strokeImage(pie.canvas.img,
-		    pie.canvas.drw,
-		    brushImg,
-		    (struct Vec2i){0, 0},
-		    (struct Vec2i){16, 0});
-
-	mouseJustUp(&pie.canvas);
-
 	while (!glfwWindowShouldClose(window))
 	{
 		lastM.x = m.x;

@@ -194,9 +194,7 @@ mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 ALWAYS_INLINE double
 mtStepCount(struct Vec2i d, double w, double h)
 {
-	if (d.x > d.y)
-		return d.x / w;
-	return d.y / h;
+	return d.x > d.y ? d.x / w : d.y / h;
 }
 
 ALWAYS_INLINE struct Vec2f
@@ -214,17 +212,15 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 	struct pie *pie = glfwGetWindowUserPointer(window);
 
 	glfwMakeContextCurrent(window);
-	switch (button)
-	{
-	case GLFW_MOUSE_BUTTON_LEFT:
-		pie->m0Down = action == GLFW_PRESS;
 
-		if (action == GLFW_PRESS)
-			break;
+	if (button != GLFW_MOUSE_BUTTON_LEFT)
+		return;
 
-		mouseJustUp(&pie->canvas);
-		break;
-	}
+	pie->m0Down = action == GLFW_PRESS;
+	if (action == GLFW_PRESS)
+		return;
+
+	mouseJustUp(&pie->canvas);
 }
 
 static void
@@ -904,9 +900,7 @@ askColor(struct ColorRGBA *out)
 	buffer[8] = 0;
 
 	if (!storgba(buffer, out))
-	{
 		fprintf(stderr, "Failed to parse color %s\n", buffer);
-	}
 
 	close(fd[0]);
 }

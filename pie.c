@@ -506,28 +506,22 @@ parseArguments(struct pie *pie, int argc, char **argv)
 }
 
 ALWAYS_INLINE void
-closeProgram(struct pie *pie, struct Canvas *canvas)
+writeOutput(struct pie *pie, struct Image img)
 {
-	fputc('\n', stderr);
 	if (!pie->useStdout)
 	{
 		stbi_write_png(pie->argv[1],
-			       canvas->img.w,
-			       canvas->img.h,
+			       img.w,
+			       img.h,
 			       4,
-			       canvas->img.data,
-			       canvas->img.w * (int)sizeof(*canvas->img.data));
+			       img.data,
+			       img.w * (int)sizeof(*img.data));
 		return;
 	}
 
-	int stride = canvas->img.w * (int)sizeof(*canvas->img.data);
-	stbi_write_png_to_func(writeStdoutImage,
-			       NULL,
-			       canvas->img.w,
-			       canvas->img.h,
-			       4,
-			       canvas->img.data,
-			       stride);
+	int stride = img.w * (int)sizeof(*img.data);
+	stbi_write_png_to_func(
+		writeStdoutImage, NULL, img.w, img.h, 4, img.data, stride);
 }
 
 ALWAYS_INLINE void
@@ -607,6 +601,32 @@ loadArgFile(char *filename, struct Canvas *canvas)
 }
 
 static void
+newBlankCanvas(struct Canvas *canvas)
+{
+	unsigned int pixels = (unsigned int)(canvas->img.h * canvas->img.w);
+	canvas->img.data = malloc(pixels * sizeof(*canvas->img.data));
+	if (canvas->img.data == NULL)
+	{
+		perror("Failed to create blank image");
+		exit(EXIT_FAILURE);
+	}
+
+	canvas->drw.data = malloc(pixels * sizeof(*canvas->drw.data));
+	if (canvas->drw.data == NULL)
+	{
+		free(canvas->img.data);
+		perror("Failed to create blank image");
+		exit(EXIT_FAILURE);
+	}
+
+	for (unsigned int i = 0; i < pixels; i++)
+	{
+		canvas->img.data[i] = BG_COLOR;
+		canvas->drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
+	}
+}
+
+static void
 loadInputFile(struct pie *pie)
 {
 	if (pie->useStdin)
@@ -621,30 +641,7 @@ loadInputFile(struct pie *pie)
 		return;
 	}
 
-	/* new blank canvas */
-
-	unsigned int pixels =
-		(unsigned int)(pie->canvas.img.h * pie->canvas.img.w);
-	pie->canvas.img.data = malloc(pixels * sizeof(*pie->canvas.img.data));
-	if (pie->canvas.img.data == NULL)
-	{
-		perror("Failed to create blank image");
-		exit(EXIT_FAILURE);
-	}
-
-	pie->canvas.drw.data = malloc(pixels * sizeof(*pie->canvas.drw.data));
-	if (pie->canvas.drw.data == NULL)
-	{
-		free(pie->canvas.img.data);
-		perror("Failed to create blank image");
-		exit(EXIT_FAILURE);
-	}
-
-	for (unsigned int i = 0; i < pixels; i++)
-	{
-		pie->canvas.img.data[i] = BG_COLOR;
-		pie->canvas.drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
-	}
+	newBlankCanvas(&pie->canvas);
 }
 
 static void
@@ -926,7 +923,8 @@ main(int argc, char **argv)
 			mouseDown(&pie, pie.canvas.drw, lastM, m);
 	}
 
-	closeProgram(&pie, &pie.canvas);
+	fputc('\n', stderr);
+	writeOutput(&pie, &pie.canvas.img);
 
 	glDeleteTextures(1, &pie.canvas.grImg.tex);
 	glDeleteTextures(1, &pie.canvas.grDrw.tex);

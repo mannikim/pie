@@ -11,10 +11,6 @@ pie: mannikim's personal image editor
   - [ ] create file with custom width/height
   - [ ] open existing file / read from stdin
   - [ ] write to file / write to stdout
-- [ ] cleanup on grFramebufferCallback
-  - i think most of canvas resize system can be thrown away. it had a purpose
-  when i was still thinking on adding some GUI to the program but now with the
-  simple terminal UI i think it is best to remove it
 +++ end todo +++
 */
 
@@ -224,22 +220,6 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 		pie->brushSize += .5;
 }
 
-static void
-grFramebufferCallback(GLFWwindow *window, int width, int height)
-{
-	glfwMakeContextCurrent(window);
-	if ((float)width / (float)height > (float)WIDTH / (float)HEIGHT)
-	{
-		float t = (float)height / WIDTH;
-		int o = (int)(((float)width - (HEIGHT * t)) / 2.f);
-		glViewport(o, 0, (int)(WIDTH * t), height);
-		return;
-	}
-	float t = (float)width / WIDTH;
-	int o = (int)(((float)height - (HEIGHT * t)) / 2.f);
-	glViewport(0, o, width, (int)(HEIGHT * t));
-}
-
 ALWAYS_INLINE void
 grImageGenTexture(struct Image img, unsigned int *out)
 {
@@ -392,7 +372,6 @@ grInit(struct pie *pie, GLFWwindow **window)
 	glfwSetWindowUserPointer(*window, pie);
 
 	glfwSetMouseButtonCallback(*window, inMouseCallback);
-	glfwSetFramebufferSizeCallback(*window, grFramebufferCallback);
 	glfwSetKeyCallback(*window, inKeyboardCallback);
 
 	glfwSwapInterval(0);
@@ -924,7 +903,7 @@ main(int argc, char **argv)
 	}
 
 	fputc('\n', stderr);
-	writeOutput(&pie, &pie.canvas.img);
+	writeOutput(&pie, pie.canvas.img);
 
 	glDeleteTextures(1, &pie.canvas.grImg.tex);
 	glDeleteTextures(1, &pie.canvas.grDrw.tex);

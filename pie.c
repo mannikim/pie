@@ -702,30 +702,6 @@ strokeImage(struct Image read,
 }
 
 static void
-strokePencil(struct Image read,
-	     struct Image write,
-	     struct ColorRGBA color,
-	     struct Vec2i v0,
-	     struct Vec2i v1)
-{
-	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
-	struct Vec2i absd = {abs(d.x), abs(d.y)};
-	double count = absd.x > absd.y ? absd.x : absd.y;
-	struct Vec2f step = {d.x / count, d.y / count};
-	struct Vec2f cur = {v0.x, v0.y};
-
-	for (size_t i = 0; i < (size_t)(count + 1); i++)
-	{
-		size_t id = (size_t)cur.x + (size_t)cur.y * (size_t)read.w;
-
-		write.data[id] = color;
-
-		cur.x += step.x;
-		cur.y += step.y;
-	}
-}
-
-static void
 strokeSizePencil(struct Image read,
 		 struct Image write,
 		 struct ColorRGBA color,

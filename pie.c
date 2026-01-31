@@ -121,12 +121,6 @@ mouseJustUp(struct Canvas *canvas);
 static char *colorPaletteCmd[] = {"pcp", NULL};
 
 ALWAYS_INLINE bool
-mtBounds(double x, double y, double bx, double by, double w, double h)
-{
-	return x > bx && x < bx + w && y > by && y < by + h;
-}
-
-ALWAYS_INLINE bool
 mtBoundsZero(double x0, double y0, double x1, double y1)
 {
 	return x0 > 0 && x0 < x1 && y0 > 0 && y0 < y1;
@@ -624,42 +618,6 @@ loadInputFile(struct pie *pie)
 }
 
 static void
-strokeImage(struct Image read,
-	    struct Image write,
-	    struct Image brush,
-	    struct Vec2i v0,
-	    struct Vec2i v1)
-{
-	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
-	struct Vec2i absd = {abs(d.x), abs(d.y)};
-	double count = mtStepCount(absd, brush.w / 2., brush.h / 2.);
-	struct Vec2f step = {d.x / count, d.y / count};
-	struct Vec2f cur = {v0.x, v0.y};
-
-	int hw = brush.w / 2, hh = brush.h / 2;
-	for (size_t i = 0; i < (size_t)(count + 1); i++)
-	{
-		int x = mtMax(hw - (int)cur.x, 0);
-		int w = mtMin(hw - (int)cur.x + read.w, brush.w);
-		int y = mtMax(hh - (int)cur.y, 0);
-		int h = mtMin(hh - (int)cur.y + read.h, brush.w);
-
-		for (int j = y; j < h; j++)
-			for (int k = x; k < w; k++)
-			{
-				struct Vec2i fp = {k + (int)cur.x - hw,
-						   j + (int)cur.y - hh};
-				size_t id = (size_t)(fp.x + fp.y * read.w);
-				size_t bid = (size_t)(k + j * brush.w);
-				write.data[id] = brush.data[bid];
-			}
-
-		cur.x += step.x;
-		cur.y += step.y;
-	}
-}
-
-static void
 strokeSizePencil(struct Image read,
 		 struct Image write,
 		 struct ColorRGBA color,
@@ -704,7 +662,7 @@ mouseDown(struct pie *pie,
 	struct Vec2f rs =
 		mtScreen2Canvas(start, pie->canvas.tr.pos, pie->canvas.scale);
 
-	if (mtBounds(rs.x, rs.y, 0, 0, pie->canvas.img.w, pie->canvas.img.h))
+	if (mtBoundsZero(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
 	{
 		struct Vec2f re;
 

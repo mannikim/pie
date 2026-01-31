@@ -104,15 +104,12 @@ static const char *canvasFragSrc = "#version 330 core\n"
 				   "void main() {"
 				   "FragColor = texture(tex, texCoord);"
 				   "}";
-/* FDECL */
 
 static void
 askColor(struct ColorRGBA *out);
 
 ALWAYS_INLINE void
 mouseJustUp(struct Canvas *canvas);
-
-/* CONFIG */
 
 #define WIN_TITLE "pie"
 
@@ -126,8 +123,6 @@ mouseJustUp(struct Canvas *canvas);
 
 /* TODO: make proper pcp script */
 static char *colorPaletteCmd[] = {"pcp", NULL};
-
-/* MATH */
 
 ALWAYS_INLINE bool
 mtBounds(double x, double y, double bx, double by, double w, double h)
@@ -196,8 +191,6 @@ mtScreen2Canvas(struct Vec2f mp, struct Vec2f cp, double cs)
 	return (struct Vec2f){(mp.x - cp.x) / cs, (mp.y - cp.y) / cs};
 }
 
-/* INPUT */
-
 static void
 inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 {
@@ -230,8 +223,6 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	if (key == GLFW_KEY_P && action != GLFW_RELEASE)
 		pie->brushSize += .5;
 }
-
-/* GRAPHICS */
 
 static void
 grFramebufferCallback(GLFWwindow *window, int width, int height)
@@ -413,8 +404,6 @@ grInit(struct pie *pie, GLFWwindow **window)
 
 	return true;
 }
-
-/* ORPHANS */
 
 inline static void
 canvasAlign(struct Canvas *canvas)

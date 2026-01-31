@@ -3,25 +3,18 @@
  * this file is part of pie
  * see LICENSE file for the license text
 
-mannikim's personal image editor
-
-MAXIMUM FILE COUNT: 7
-MAXIMUM LINE COUNT:
-pie.c: 1777
-Makefile: 77
-pcp: 77
-.git and dependencies not included
-
-the limit doesn't care about comments or empty lines
-this limit should not compromise the project readability or quality
-in other words, code like there is no limit, until we reach it
+pie: mannikim's personal image editor
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
-- [x] option to change brush size
-
-# stuff for release
-- [ ] proper project description
+- [ ] command line flags:
+  - [ ] create file with custom width/height
+  - [ ] open existing file / read from stdin
+  - [ ] write to file / write to stdout
+- [ ] cleanup on grFramebufferCallback
+  - i think most of canvas resize system can be thrown away. it had a purpose
+  when i was still thinking on adding some GUI to the program but now with the
+  simple terminal UI i think it is best to remove it
 +++ end todo +++
 */
 

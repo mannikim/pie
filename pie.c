@@ -120,6 +120,10 @@ mouseJustUp(struct Canvas *canvas);
 /* TODO: make proper pcp script */
 static char *colorPaletteCmd[] = {"pcp", NULL};
 
+#define KEY_COLOR_PALETTE GLFW_KEY_Q
+#define KEY_BRUSH_INC_SIZE GLFW_KEY_P
+#define KEY_BRUSH_DEC_SIZE GLFW_KEY_O
+
 ALWAYS_INLINE bool
 mtBoundsZero(double x0, double y0, double x1, double y1)
 {
@@ -206,11 +210,11 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 
 	glfwMakeContextCurrent(window);
 	struct pie *pie = glfwGetWindowUserPointer(window);
-	if (key == GLFW_KEY_Q && action == GLFW_RELEASE)
+	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
 		askColor(&pie->color);
-	if (key == GLFW_KEY_O && action != GLFW_RELEASE)
+	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
 		pie->brushSize -= .5;
-	if (key == GLFW_KEY_P && action != GLFW_RELEASE)
+	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
 		pie->brushSize += .5;
 }
 

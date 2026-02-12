@@ -386,7 +386,6 @@ canvasAlign(struct Canvas *canvas)
 {
 	double s = mtScaleFitIn(
 		canvas->img.w, canvas->img.h, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
-
 	canvas->scale = s;
 	canvas->tr.size.x = canvas->img.w * s;
 	canvas->tr.size.y = canvas->img.h * s;
@@ -486,6 +485,33 @@ parseArguments(struct pie *pie, int argc, char **argv)
 				exit(EXIT_FAILURE);
 			}
 			printUsage(stdout, argv[0]);
+			exit(EXIT_SUCCESS);
+		}
+		if (strcmp(argv[i], "-width") == 0)
+		{
+			i++;
+			if (i >= argc)
+			{
+				fprintf(stderr, "Missing width\n");
+				exit(EXIT_FAILURE);
+			}
+			int size = atoi(argv[i]);
+			pie->canvas.img.w = size;
+			pie->canvas.drw.w = size;
+			continue;
+		}
+		if (strcmp(argv[i], "-height") == 0)
+		{
+			i++;
+			if (i >= argc)
+			{
+				fprintf(stderr, "Missing height\n");
+				exit(EXIT_FAILURE);
+			}
+			int size = atoi(argv[i]);
+			pie->canvas.img.h = size;
+			pie->canvas.drw.h = size;
+			continue;
 		}
 	}
 	if (pie->useStdin && pie->inFile)
@@ -826,20 +852,12 @@ int
 main(int argc, char **argv)
 {
 	struct pie pie = {0};
+	pie.canvas.img = (struct Image){0, 50, 50};
+	pie.canvas.img = (struct Image){0, 50, 50};
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.brushSize = 1;
-	pie.canvas = (struct Canvas){
-		.img = {0, 50, 50},
-		.drw = {0, 50, 50},
-		.scale = 0,
-		.tr = {{0, 0}, {0, 0}},
-		.grImg = {0},
-		.grDrw = {0},
-		.sh = {0},
-		.vao = 0,
-	};
 
 	loadInputFile(&pie);
 

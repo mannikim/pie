@@ -9,8 +9,8 @@ pie: mannikim's personal image editor
 - [ ] draw straight line when shift is pressed
 - [ ] command line flags:
   - [ ] create file with custom width/height
-  - [ ] open existing file / read from stdin
-  - [ ] write to file / write to stdout
+  - [x] open existing file / read from stdin
+  - [x] write to file / write to stdout
 +++ end todo +++
 */
 
@@ -68,9 +68,8 @@ struct Canvas {
 };
 
 struct pie {
-	int argc;
-	char **argv;
-	bool useStdin, useStdout, hasInput;
+	char *inFile, *outFile;
+	bool useStdin, useStdout;
 
 	struct Canvas canvas;
 	struct ColorRGBA color;
@@ -437,57 +436,76 @@ writeStdoutImage(void *context, void *data, int size)
 }
 
 static void
-printUsage(const char *progName)
+printUsage(FILE *f, const char *prog)
 {
-	printf("%s -h\n%s <outfile|-> [infile|-]\n", progName, progName);
+	fprintf(f, "%s [-h] [-i file] [-o file] [-stdin] [-stdout]\n", prog);
 }
 
 static inline void
 parseArguments(struct pie *pie, int argc, char **argv)
 {
-	/* required args */
-
-	pie->argc = argc;
-	pie->argv = argv;
-
-	if (argc >= 4)
+	for (int i = 1; i < argc; i++)
 	{
-		fprintf(stderr, "Excess arguments.\n");
+		if (strcmp(argv[i], "-stdin") == 0)
+		{
+			pie->useStdin = true;
+			continue;
+		}
+		if (strcmp(argv[i], "-stdout") == 0)
+		{
+			pie->useStdout = true;
+			continue;
+		}
+		if (strcmp(argv[i], "-o") == 0)
+		{
+			i++;
+			if (i >= argc)
+			{
+				fprintf(stderr, "Missing output file name\n");
+				exit(EXIT_FAILURE);
+			}
+			pie->outFile = argv[i];
+			continue;
+		}
+		if (strcmp(argv[i], "-i") == 0)
+		{
+			i++;
+			if (i >= argc)
+			{
+				fprintf(stderr, "Missing input file name\n");
+				exit(EXIT_FAILURE);
+			}
+			pie->inFile = argv[i];
+			continue;
+		}
+		if (strcmp(argv[i], "-h") == 0)
+		{
+			if (i + 1 < argc)
+			{
+				fprintf(stderr, "Excess arguments.\n");
+				exit(EXIT_FAILURE);
+			}
+			printUsage(stdout, argv[0]);
+		}
+	}
+	if (pie->useStdin && pie->inFile)
+	{
+		fprintf(stderr, "Can't use both -i and -stdin.\n");
 		exit(EXIT_FAILURE);
 	}
-
-	if (argc <= 1)
+	if (pie->useStdout && pie->outFile)
 	{
-		fprintf(stderr, "No output file specified\n");
+		fprintf(stderr, "Can't use both -o and -stdout.\n");
 		exit(EXIT_FAILURE);
 	}
-
-	if (strcmp(argv[1], "-h") == 0)
-	{
-		printUsage(argv[0]);
-		exit(EXIT_SUCCESS);
-	}
-
-	if (strcmp(argv[1], "-") == 0)
-		pie->useStdout = true;
-
-	/* optional args */
-
-	if (argc < 3)
-		return;
-
-	pie->hasInput = true;
-
-	if (strcmp(argv[2], "-") == 0)
-		pie->useStdin = true;
 }
 
 ALWAYS_INLINE void
 writeOutput(struct pie *pie, struct Image img)
 {
-	if (!pie->useStdout)
+	if (pie->outFile)
 	{
-		stbi_write_png(pie->argv[1],
+		stbi_write_png(pie->outFile,
 			       img.w,
 			       img.h,
 			       4,
@@ -495,6 +513,9 @@ writeOutput(struct pie *pie, struct Image img)
 			       img.w * (int)sizeof(*img.data));
 		return;
 	}
+
+	if (!pie->useStdout)
+		return;
 
 	int stride = img.w * (int)sizeof(*img.data);
 	stbi_write_png_to_func(
@@ -612,9 +633,9 @@ loadInputFile(struct pie *pie)
 		return;
 	}
 
-	if (pie->hasInput)
+	if (pie->inFile)
 	{
-		loadArgFile(pie->argv[2], &pie->canvas);
+		loadArgFile(pie->inFile, &pie->canvas);
 		return;
 	}
 

@@ -7,10 +7,6 @@ pie: mannikim's personal image editor
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
-- [ ] command line flags:
-  - [ ] create file with custom width/height
-  - [x] open existing file / read from stdin
-  - [x] write to file / write to stdout
 +++ end todo +++
 */
 

@@ -832,14 +832,14 @@ askColor(struct ColorRGBA *out)
 	if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
 	{
 		close(fd[0]);
-		fprintf(stderr, "Failed to read from color picker\n");
+		fprintf(stderr, "\r\033Failed to read from color picker");
 		return;
 	}
 
 	buffer[8] = 0;
 
 	if (!storgba(buffer, out))
-		fprintf(stderr, "Failed to parse color %s\n", buffer);
+		fprintf(stderr, "\r\033[KFailed to parse color %s", buffer);
 
 	close(fd[0]);
 }
@@ -875,12 +875,13 @@ main(int argc, char **argv)
 		struct Vec2f rs = mtScreen2Canvas(
 			m, pie.canvas.tr.pos, pie.canvas.scale);
 		fprintf(stderr,
-			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f ",
+			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor %x ",
 			pie.canvas.img.w,
 			pie.canvas.img.h,
 			pie.brushSize,
 			rs.x,
-			rs.y);
+			rs.y,
+			*(unsigned int *)(void **)&pie.color);
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);

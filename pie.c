@@ -65,13 +65,11 @@ struct Canvas {
 
 struct pie {
 	char *inFile, *outFile;
-	bool useStdin, useStdout, quit;
+	bool useStdin, useStdout, quit, m0Down;
 
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
-
-	bool m0Down;
 };
 
 static const char *canvasVertSrc =

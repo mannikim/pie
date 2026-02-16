@@ -65,7 +65,7 @@ struct Canvas {
 
 struct pie {
 	char *inFile, *outFile;
-	bool useStdin, useStdout;
+	bool useStdin, useStdout, quit;
 
 	struct Canvas canvas;
 	struct ColorRGBA color;
@@ -118,6 +118,7 @@ static char *colorPaletteCmd[] = {"pcp", NULL};
 #define KEY_COLOR_PALETTE GLFW_KEY_Q
 #define KEY_BRUSH_INC_SIZE GLFW_KEY_P
 #define KEY_BRUSH_DEC_SIZE GLFW_KEY_O
+#define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
 
 ALWAYS_INLINE bool
 mtBoundsZero(double x0, double y0, double x1, double y1)
@@ -211,6 +212,13 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 		pie->brushSize -= .5;
 	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
 		pie->brushSize += .5;
+	if (key == KEY_QUIT_NOSAVE && action != GLFW_RELEASE &&
+	    mod == GLFW_MOD_SHIFT)
+	{
+		pie->useStdout = false;
+		pie->outFile = NULL;
+		pie->quit = true;
+	}
 }
 
 ALWAYS_INLINE void
@@ -867,7 +875,7 @@ main(int argc, char **argv)
 	struct Vec2f m, lastM;
 	glfwGetCursorPos(window, &m.x, &m.y);
 
-	while (!glfwWindowShouldClose(window))
+	while (!glfwWindowShouldClose(window) && !pie.quit)
 	{
 		lastM.x = m.x;
 		lastM.y = m.y;

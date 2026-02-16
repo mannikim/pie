@@ -849,7 +849,7 @@ main(int argc, char **argv)
 {
 	struct pie pie = {0};
 	pie.canvas.img = (struct Image){0, 50, 50};
-	pie.canvas.img = (struct Image){0, 50, 50};
+	pie.canvas.drw = (struct Image){0, 50, 50};
 	parseArguments(&pie, argc, argv);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};

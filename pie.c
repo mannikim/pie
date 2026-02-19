@@ -515,6 +515,9 @@ parseArguments(struct pie *pie, int argc, char **argv)
 			pie->canvas.drw.h = size;
 			continue;
 		}
+
+		fprintf(stderr, "Failed to parse flag %s\n", argv[i]) ;
+		exit(EXIT_FAILURE);
 	}
 	if (pie->useStdin && pie->inFile)
 	{

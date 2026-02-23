@@ -7,9 +7,12 @@ CFLAGS := -std=c99 -Os -Wall -Wpedantic -Wextra
 PREFIX := /usr/local
 LIBS := -lGL -lglfw -lGLEW -lm
 
-all: pie
+all: pie pcp
 
-pie: pie.c
+pie: pie.c common.h
+	$(CC) $< -o $@ $(CFLAGS) $(LIBS)
+
+pcp: pcp.c common.h
 	$(CC) $< -o $@ $(CFLAGS) $(LIBS)
 
 install: pie pcp

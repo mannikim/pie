@@ -14,31 +14,16 @@ pie: mannikim's personal image editor
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define ALWAYS_INLINE __attribute__((always_inline)) inline static
-
-struct Vec2f {
-	double x, y;
-};
+#include "common.h"
 
 struct Vec2i {
 	int x, y;
-};
-
-struct Transform {
-	struct Vec2f pos, size;
-};
-
-struct ColorRGBA {
-	unsigned char r, g, b, a;
 };
 
 struct Image {
@@ -72,20 +57,6 @@ struct pie {
 	double brushSize;
 };
 
-static const char *canvasVertSrc =
-	"#version 330 core\n"
-	"layout (location = 0) in vec2 aPos;"
-	"out vec2 texCoord;"
-	"uniform vec4 uTr;"
-	"uniform vec2 uWin;"
-	"void main() {"
-	"vec2 outPos = vec2(uTr.x, uTr.y) + "
-	"vec2(aPos.x * uTr.z, aPos.y * uTr.w);"
-	"gl_Position = vec4(outPos.x / uWin.x * 2 - 1,"
-	"outPos.y / uWin.y * -2 + 1, 0, 1);"
-	"texCoord = vec2(gl_VertexID & 1, (gl_VertexID & 0x2) >> 1);"
-	"}";
-
 static const char *canvasFragSrc = "#version 330 core\n"
 				   "in vec2 texCoord;"
 				   "out vec4 FragColor;"
@@ -118,24 +89,12 @@ static char *colorPaletteCmd[] = {"pcp", NULL};
 #define KEY_BRUSH_DEC_SIZE GLFW_KEY_O
 #define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
 
-ALWAYS_INLINE bool
-mtBoundsZero(double x0, double y0, double x1, double y1)
-{
-	return x0 > 0 && x0 < x1 && y0 > 0 && y0 < y1;
-}
-
 ALWAYS_INLINE double
 mtScaleFitIn(double w0, double h0, double w1, double h1)
 {
 	double r0 = w1 / w0;
 	double r1 = h1 / h0;
 	return r0 < r1 ? r0 : r1;
-}
-
-ALWAYS_INLINE double
-mtClampd(double x, double min, double max)
-{
-	return x > max ? max : (x < min ? min : x);
 }
 
 ALWAYS_INLINE int
@@ -263,7 +222,7 @@ grCompileShader(int type, const char *src)
 inline static unsigned int
 grCanvasGenShader(void)
 {
-	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, canvasVertSrc);
+	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, imgVertSrc);
 	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, canvasFragSrc);
 
 	unsigned int shader = glCreateProgram();
@@ -290,35 +249,6 @@ grCanvasGenShader(void)
 	return shader;
 }
 
-static unsigned int
-grCanvasGenVAO(void)
-{
-	static const float verts[] = {0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0};
-	static const unsigned int indices[] = {0, 1, 2, 1, 3, 2};
-
-	unsigned int vao;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
-
-	unsigned int vbo;
-	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-
-	unsigned int ebo;
-	glGenBuffers(1, &ebo);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-		     sizeof(indices),
-		     indices,
-		     GL_STATIC_DRAW);
-
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
-	glEnableVertexAttribArray(0);
-
-	return vao;
-}
-
 static void
 grDrawImage(unsigned int vao)
 {
@@ -329,7 +259,7 @@ grDrawImage(unsigned int vao)
 ALWAYS_INLINE void
 grCanvasInitGr(struct Canvas *canvas)
 {
-	canvas->vao = grCanvasGenVAO();
+	canvas->vao = grImgGenVAO();
 
 	grImageGenTexture(canvas->img, &canvas->grImg.tex);
 	grImageGenTexture(canvas->img, &canvas->grDrw.tex);

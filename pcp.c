@@ -23,15 +23,19 @@ struct ColorHSV {
 	double h, s, v;
 };
 
+struct ImgShader {
+	unsigned int id, uWin, uTr;
+};
+
 struct HSVWheel {
-	unsigned int shaderId, shaderUWin, shaderUTr;
+	struct ImgShader sh;
 	struct Transform tr;
 	struct Vec2f pos;
 	struct ColorHSV c;
 };
 
 struct ValueBar {
-	unsigned int shaderId, shaderUWin, shaderUTr;
+	struct ImgShader sh;
 	struct Transform tr;
 	double v;
 };
@@ -180,34 +184,36 @@ grGenShader(const char *vertSrc, const char *fragSrc)
 	return shader;
 }
 
+static inline void
+grGenImgShader(struct ImgShader *sh, const char *vertSrc, const char *fragSrc)
+{
+	sh->id = grGenShader(vertSrc, fragSrc);
+	sh->uTr = glGetUniformLocation(sh->id, "uTr");
+	sh->uWin = glGetUniformLocation(sh->id, "uWin");
+}
+
 ALWAYS_INLINE void
 grHSVWheelInitGr(struct HSVWheel *w)
 {
-	w->shaderId = grGenShader(imgVertSrc, hsvWheelFragSrc);
-	w->shaderUTr = glGetUniformLocation(w->shaderId, "uTr");
-	w->shaderUWin = glGetUniformLocation(w->shaderId, "uWin");
-
-	glUniform4f(w->shaderUTr,
+	grGenImgShader(&w->sh, imgVertSrc, hsvWheelFragSrc);
+	glUniform4f(w->sh.uTr,
 		    w->tr.pos.x,
 		    w->tr.pos.y,
 		    w->tr.size.x,
 		    w->tr.size.y);
-	glUniform2f(w->shaderUWin, WIDTH, HEIGHT);
+	glUniform2f(w->sh.uWin, WIDTH, HEIGHT);
 }
 
 ALWAYS_INLINE void
 grValBarInitGr(struct ValueBar *v)
 {
-	v->shaderId = grGenShader(imgVertSrc, valBarFragSrc);
-	v->shaderUTr = glGetUniformLocation(v->shaderId, "uTr");
-	v->shaderUWin = glGetUniformLocation(v->shaderId, "uWin");
-
-	glUniform4f(v->shaderUTr,
+	grGenImgShader(&v->sh, imgVertSrc, valBarFragSrc);
+	glUniform4f(v->sh.uTr,
 		    v->tr.pos.x,
 		    v->tr.pos.y,
 		    v->tr.size.x,
 		    v->tr.size.y);
-	glUniform2f(v->shaderUWin, WIDTH, HEIGHT);
+	glUniform2f(v->sh.uWin, WIDTH, HEIGHT);
 }
 
 ALWAYS_INLINE bool
@@ -319,8 +325,8 @@ main(void)
 			     1);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		grDrawImage(pcp.hsvWheel.shaderId);
-		grDrawImage(pcp.valBar.shaderId);
+		grDrawImage(pcp.hsvWheel.sh.id);
+		grDrawImage(pcp.valBar.sh.id);
 
 		glUseProgram(0);
 		glColor3ub(0, 0, 0);
@@ -340,8 +346,8 @@ main(void)
 	printf("%08x", *(uint32_t *)(void *)&pcp.color);
 
 	glDeleteVertexArrays(1, &vao);
-	glDeleteProgram(pcp.hsvWheel.shaderId);
-	glDeleteProgram(pcp.valBar.shaderId);
+	glDeleteProgram(pcp.hsvWheel.sh.id);
+	glDeleteProgram(pcp.valBar.sh.id);
 
 	glfwTerminate();
 

@@ -343,7 +343,11 @@ main(void)
 			mouseDown(&pcp, window);
 	}
 
-	printf("%x%x%x%x", pcp.color.r, pcp.color.g, pcp.color.b, pcp.color.a);
+	printf("%02x%02x%02x%02x",
+	       pcp.color.r,
+	       pcp.color.g,
+	       pcp.color.b,
+	       pcp.color.a);
 
 	glDeleteVertexArrays(1, &vao);
 	glDeleteProgram(pcp.hsvWheel.sh.id);

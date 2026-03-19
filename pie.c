@@ -141,7 +141,7 @@ mtScreen2Canvas(struct Vec2f mp, struct Vec2f cp, double cs)
 static void
 inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 {
-	(void)mod, (void)window;
+	(void)mod;
 	struct pie *pie = glfwGetWindowUserPointer(window);
 
 	glfwMakeContextCurrent(window);

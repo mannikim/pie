@@ -270,8 +270,6 @@ grDrawMark(struct Vec2f pos, struct Vec2f win)
 static struct ColorHSV
 HSVWheelAt(struct Vec2f pos)
 {
-	pos.x -= 0.5;
-	pos.y -= 0.5;
 	double h = atan2(pos.y, -pos.x) / PI / 2;
 	double s = mtClampd(sqrt(pow(pos.x, 2) + pow(pos.y, 2)) * 2, 0, 1);
 	return (struct ColorHSV){h, s, 1};
@@ -285,8 +283,14 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 	if (mtBounds(m, pcp->hsvWheel.tr))
 	{
 		struct Vec2f hsvRel = mtTransfromRel(m, pcp->hsvWheel.tr);
-		pcp->hsvWheel.c = HSVWheelAt(hsvRel);
-		pcp->hsvWheel.pos = m;
+		hsvRel.x -= .5;
+		hsvRel.y -= .5;
+		double d = sqrt(pow(hsvRel.x, 2) + pow(hsvRel.y, 2)) * 2;
+		if (d <= 1)
+		{
+			pcp->hsvWheel.c = HSVWheelAt(hsvRel);
+			pcp->hsvWheel.pos = m;
+		}
 	}
 	if (mtBounds(m, pcp->valBar.tr))
 	{

@@ -6,9 +6,6 @@
 pcp: mannikim's personal color picker
 
 +++ todo +++
-- [ ] better collision system on mouseDown
-- [ ] fix being able to select colors outside of the wheel
-- [ ] fix being unable to select colors too close to the edge of the window
 +++ end todo +++
 */
 
@@ -18,6 +15,8 @@ pcp: mannikim's personal color picker
 #include <stdlib.h>
 
 #include "common.h"
+
+enum SelectionType { SEL_NONE, SEL_HSV_WHEEL, SEL_VAL_BAR };
 
 struct ColorHSV {
 	double h, s, v;
@@ -45,6 +44,7 @@ struct pcp {
 	struct ValueBar valBar;
 	struct ColorRGBA color;
 	bool m0Down, quit;
+	enum SelectionType selection;
 };
 
 static const char *hsvWheelFragSrc =
@@ -96,6 +96,13 @@ mtLerp(double x, double y, double a)
 	return x + (y - x) * a;
 }
 
+ALWAYS_INLINE struct Vec2f
+mtTransfromInvRel(struct Vec2f pos, struct Transform tr)
+{
+	return (struct Vec2f){pos.x * tr.size.x + tr.pos.x,
+			      pos.y * tr.size.y + tr.pos.y};
+}
+
 ALWAYS_INLINE struct ColorRGBA
 mtHSV2RGBA(struct ColorHSV c)
 {
@@ -123,6 +130,23 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 		return;
 
 	pcp->m0Down = action == GLFW_PRESS;
+
+	pcp->selection = SEL_NONE;
+	if (action != GLFW_PRESS)
+		return;
+
+	struct Vec2f m;
+	glfwGetCursorPos(window, &m.x, &m.y);
+	if (mtBounds(m, pcp->hsvWheel.tr))
+	{
+		pcp->selection = SEL_HSV_WHEEL;
+		return;
+	}
+	if (mtBounds(m, pcp->valBar.tr))
+	{
+		pcp->selection = SEL_VAL_BAR;
+		return;
+	}
 }
 
 static void
@@ -280,23 +304,40 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 {
 	struct Vec2f m;
 	glfwGetCursorPos(window, &m.x, &m.y);
-	if (mtBounds(m, pcp->hsvWheel.tr))
+	switch (pcp->selection)
+	{
+	case SEL_HSV_WHEEL:
 	{
 		struct Vec2f hsvRel = mtTransfromRel(m, pcp->hsvWheel.tr);
 		hsvRel.x -= .5;
 		hsvRel.y -= .5;
 		double d = sqrt(pow(hsvRel.x, 2) + pow(hsvRel.y, 2)) * 2;
-		if (d <= 1)
+		if (d > 1)
 		{
-			pcp->hsvWheel.c = HSVWheelAt(hsvRel);
-			pcp->hsvWheel.pos = m;
+			hsvRel.x /= d;
+			hsvRel.y /= d;
 		}
+		pcp->hsvWheel.c = HSVWheelAt(hsvRel);
+		hsvRel.x += .5;
+		hsvRel.y += .5;
+		pcp->hsvWheel.pos =
+			mtTransfromInvRel(hsvRel, pcp->hsvWheel.tr);
+		break;
 	}
-	if (mtBounds(m, pcp->valBar.tr))
+	case SEL_VAL_BAR:
 	{
+		double x =
+			mtClampd(m.x,
+				 pcp->valBar.tr.pos.x,
+				 pcp->valBar.tr.size.x + pcp->valBar.tr.pos.x);
 		pcp->valBar.v =
-			(m.x - pcp->valBar.tr.pos.x) / pcp->valBar.tr.size.x;
+			(x - pcp->valBar.tr.pos.x) / pcp->valBar.tr.size.x;
+		break;
 	}
+	default:
+		break;
+	}
+
 	struct ColorHSV hsv = {
 		pcp->hsvWheel.c.h, pcp->hsvWheel.c.s, pcp->valBar.v};
 	pcp->color = mtHSV2RGBA(hsv);

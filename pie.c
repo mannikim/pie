@@ -10,7 +10,6 @@ pie: mannikim's personal image editor
 +++ end todo +++
 */
 
-#include <stdbool.h>
 #include <sys/types.h>
 #include <unistd.h>
 

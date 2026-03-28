@@ -10,8 +10,6 @@ pcp: mannikim's personal color picker
 */
 
 #include <math.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include "common.h"

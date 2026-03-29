@@ -15,10 +15,11 @@ pie: pie.c common.h
 pcp: pcp.c common.h
 	$(CC) $< -o $@ $(CFLAGS) $(LIBS)
 
-install: pie pcp
+install: pie pcp pie-cp
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp pie $(DESTDIR)$(PREFIX)/bin
 	cp pcp $(DESTDIR)$(PREFIX)/bin
+	cp pie-cp $(DESTDIR)$(PREFIX)/bin
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/pie

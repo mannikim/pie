@@ -10,6 +10,8 @@ pie: mannikim's personal image editor
 +++ end todo +++
 */
 
+#include <fcntl.h>
+#include <sys/select.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -54,6 +56,7 @@ struct pie {
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
+	int fifofd;
 };
 
 static const char *canvasFragSrc = "#version 330 core\n"
@@ -65,7 +68,7 @@ static const char *canvasFragSrc = "#version 330 core\n"
 				   "}";
 
 static void
-askColor(struct ColorRGBA *out);
+run(char **cmd);
 
 ALWAYS_INLINE void
 mouseJustUp(struct Canvas *canvas);
@@ -80,8 +83,7 @@ mouseJustUp(struct Canvas *canvas);
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
-/* TODO: make proper pcp script */
-static char *colorPaletteCmd[] = {"pcp", NULL};
+static char *colorPickCmd[] = {"pie-cp", NULL};
 
 #define KEY_COLOR_PALETTE GLFW_KEY_Q
 #define KEY_BRUSH_INC_SIZE GLFW_KEY_P
@@ -163,7 +165,7 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	glfwMakeContextCurrent(window);
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
-		askColor(&pie->color);
+		run(colorPickCmd);
 	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
 		pie->brushSize -= .5;
 	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
@@ -736,16 +738,8 @@ storgba(const char *str, struct ColorRGBA *out)
 }
 
 static void
-askColor(struct ColorRGBA *out)
+run(char **cmd)
 {
-	int fd[2];
-
-	if (pipe(fd) == -1)
-	{
-		perror("Pipe failed");
-		return;
-	}
-
 	pid_t pid = fork();
 
 	if (pid < 0)
@@ -756,33 +750,75 @@ askColor(struct ColorRGBA *out)
 
 	if (pid == 0)
 	{
-		close(fd[0]);
-
-		dup2(fd[1], STDOUT_FILENO);
-		close(fd[1]);
-
-		execvp(colorPaletteCmd[0], colorPaletteCmd);
+		execvp(cmd[0], cmd);
 
 		perror("exec failed");
 		_exit(EXIT_FAILURE);
 	}
+}
 
-	close(fd[1]);
-
-	char buffer[9] = {0};
-	if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
+ALWAYS_INLINE void
+setupFifo(int *outFd)
+{
+	int fd = open("/tmp/pie.fifo", O_RDWR | O_NONBLOCK);
+	if (fd < 0)
 	{
-		close(fd[0]);
-		fprintf(stderr, "\r\033Failed to read from color picker");
+		perror("Failed to open /tmp/pie.fifo");
+		exit(EXIT_FAILURE);
+	}
+	*outFd = fd;
+}
+
+ALWAYS_INLINE void
+runCmd(struct pie *pie, const char *cmd)
+{
+	if (strncmp(cmd, "setcolor ", 9) == 0)
+	{
+		const char *arg = &cmd[9];
+		struct ColorRGBA out;
+		if (!storgba(arg, &out))
+		{
+			fprintf(stderr,
+				"\r\033[KFailed to parse color %s\n",
+				arg);
+			return;
+		}
+		pie->color = out;
 		return;
 	}
 
-	buffer[8] = 0;
+	fprintf(stderr, "\r\033[KFailed to parse command \"%s\"\n", cmd);
+}
 
-	if (!storgba(buffer, out))
-		fprintf(stderr, "\r\033[KFailed to parse color %s", buffer);
+ALWAYS_INLINE void
+pollFifo(struct pie *pie, fd_set *rfds)
+{
+	FD_ZERO(rfds);
+	FD_SET(pie->fifofd, rfds);
+	int res = select(
+		pie->fifofd + 1, rfds, NULL, NULL, &(struct timeval){0, 0});
+	switch (res)
+	{
+	case -1:
+		perror("select failed");
+		exit(EXIT_FAILURE);
+	case 0:
+		return;
+	}
 
-	close(fd[0]);
+	if (!FD_ISSET(pie->fifofd, rfds))
+		return;
+
+	char buffer[512];
+	ssize_t n = read(pie->fifofd, buffer, sizeof(buffer) - 1);
+	if (n == -1)
+	{
+		perror("read of fifo failed");
+		exit(EXIT_FAILURE);
+	}
+	buffer[n] = '\0';
+	buffer[strcspn(buffer, "\n")] = '\0';
+	runCmd(pie, buffer);
 }
 
 int
@@ -792,6 +828,8 @@ main(int argc, char **argv)
 	pie.canvas.img = (struct Image){0, 50, 50};
 	pie.canvas.drw = (struct Image){0, 50, 50};
 	parseArguments(&pie, argc, argv);
+	fd_set rfst;
+	setupFifo(&pie.fifofd);
 
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.brushSize = 1;
@@ -816,13 +854,17 @@ main(int argc, char **argv)
 		struct Vec2f rs = mtScreen2Canvas(
 			m, pie.canvas.tr.pos, pie.canvas.scale);
 		fprintf(stderr,
-			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor %x ",
+			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
+			"%02x%02x%02x%02x ",
 			pie.canvas.img.w,
 			pie.canvas.img.h,
 			pie.brushSize,
 			rs.x,
 			rs.y,
-			*(unsigned int *)(void **)&pie.color);
+			pie.color.r,
+			pie.color.g,
+			pie.color.b,
+			pie.color.a);
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
@@ -836,6 +878,7 @@ main(int argc, char **argv)
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+		pollFifo(&pie, &rfst);
 
 		if (pie.m0Down)
 			mouseDown(&pie, pie.canvas.drw, lastM, m);
@@ -852,6 +895,7 @@ main(int argc, char **argv)
 	glfwTerminate();
 	free(pie.canvas.img.data);
 	free(pie.canvas.drw.data);
+	close(pie.fifofd);
 
 	return EXIT_SUCCESS;
 }

@@ -355,9 +355,9 @@ main(void)
 	pcp.hsvWheel.tr.size = (struct Vec2f){WIDTH, WIDTH};
 	pcp.hsvWheel.pos = (struct Vec2f){WIDTH / 2., WIDTH / 2.};
 	grHSVWheelInitGr(&pcp.hsvWheel);
-	pcp.valBar.tr = (struct Transform){{0, HEIGHT - UI_VAL_HEIGHT},
-					   {WIDTH, UI_VAL_HEIGHT}};
-	pcp.valBar.v = 1;
+	pcp.valBar.tr.pos = (struct Vec2f){0, HEIGHT - UI_VAL_HEIGHT};
+	pcp.valBar.tr.size = (struct Vec2f){WIDTH, UI_VAL_HEIGHT};
+	pcp.color.a = 0xff;
 	grValBarInitGr(&pcp.valBar);
 
 	while (!glfwWindowShouldClose(window) && !pcp.quit)

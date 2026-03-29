@@ -445,7 +445,7 @@ parseArguments(struct pie *pie, int argc, char **argv)
 			continue;
 		}
 
-		fprintf(stderr, "Failed to parse flag %s\n", argv[i]) ;
+		fprintf(stderr, "Failed to parse flag %s\n", argv[i]);
 		exit(EXIT_FAILURE);
 	}
 	if (pie->useStdin && pie->inFile)

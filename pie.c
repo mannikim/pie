@@ -785,17 +785,70 @@ askColor(struct ColorRGBA *out)
 	close(fd[0]);
 }
 
+ALWAYS_INLINE void
+run(struct pie *pie, GLFWwindow *window)
+{
+	struct Vec2f m, lastM;
+	glfwGetCursorPos(window, &m.x, &m.y);
+
+	while (!glfwWindowShouldClose(window) && !pie->quit)
+	{
+		lastM.x = m.x;
+		lastM.y = m.y;
+		glfwGetCursorPos(window, &m.x, &m.y);
+		struct Vec2f rs = mtScreen2Canvas(
+			m, pie->canvas.tr.pos, pie->canvas.scale);
+		fprintf(stderr,
+			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor %x ",
+			pie->canvas.img.w,
+			pie->canvas.img.h,
+			pie->brushSize,
+			rs.x,
+			rs.y,
+			*(unsigned int *)(void **)&pie->color);
+
+		glClear(GL_COLOR_BUFFER_BIT);
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
+		grDrawImage(pie->canvas.vao);
+
+		if (pie->m0Down)
+		{
+			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
+			grDrawImage(pie->canvas.vao);
+		}
+
+		glfwSwapBuffers(window);
+		glfwPollEvents();
+
+		if (pie->m0Down)
+			mouseDown(pie, pie->canvas.drw, lastM, m);
+	}
+}
+
+ALWAYS_INLINE void
+quit(struct pie* pie)
+{
+	fputc('\n', stderr);
+	writeOutput(pie, pie->canvas.img);
+	glDeleteTextures(1, &pie->canvas.grImg.tex);
+	glDeleteTextures(1, &pie->canvas.grDrw.tex);
+	glDeleteVertexArrays(1, &pie->canvas.vao);
+	glDeleteProgram(pie->canvas.sh.id);
+	glfwTerminate();
+	free(pie->canvas.img.data);
+	free(pie->canvas.drw.data);
+}
+
 int
 main(int argc, char **argv)
 {
 	struct pie pie = {0};
 	pie.canvas.img = (struct Image){0, 50, 50};
 	pie.canvas.drw = (struct Image){0, 50, 50};
-	parseArguments(&pie, argc, argv);
-
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.brushSize = 1;
 
+	parseArguments(&pie, argc, argv);
 	loadInputFile(&pie);
 
 	GLFWwindow *window;
@@ -805,53 +858,7 @@ main(int argc, char **argv)
 	canvasAlign(&pie.canvas);
 	grCanvasInitGr(&pie.canvas);
 
-	struct Vec2f m, lastM;
-	glfwGetCursorPos(window, &m.x, &m.y);
-
-	while (!glfwWindowShouldClose(window) && !pie.quit)
-	{
-		lastM.x = m.x;
-		lastM.y = m.y;
-		glfwGetCursorPos(window, &m.x, &m.y);
-		struct Vec2f rs = mtScreen2Canvas(
-			m, pie.canvas.tr.pos, pie.canvas.scale);
-		fprintf(stderr,
-			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor %x ",
-			pie.canvas.img.w,
-			pie.canvas.img.h,
-			pie.brushSize,
-			rs.x,
-			rs.y,
-			*(unsigned int *)(void **)&pie.color);
-
-		glClear(GL_COLOR_BUFFER_BIT);
-		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
-		grDrawImage(pie.canvas.vao);
-
-		if (pie.m0Down)
-		{
-			glBindTexture(GL_TEXTURE_2D, pie.canvas.grDrw.tex);
-			grDrawImage(pie.canvas.vao);
-		}
-
-		glfwSwapBuffers(window);
-		glfwPollEvents();
-
-		if (pie.m0Down)
-			mouseDown(&pie, pie.canvas.drw, lastM, m);
-	}
-
-	fputc('\n', stderr);
-	writeOutput(&pie, pie.canvas.img);
-
-	glDeleteTextures(1, &pie.canvas.grImg.tex);
-	glDeleteTextures(1, &pie.canvas.grDrw.tex);
-	glDeleteVertexArrays(1, &pie.canvas.vao);
-	glDeleteProgram(pie.canvas.sh.id);
-
-	glfwTerminate();
-	free(pie.canvas.img.data);
-	free(pie.canvas.drw.data);
-
+	run(&pie, window);
+	quit(&pie);
 	return EXIT_SUCCESS;
 }

@@ -368,7 +368,10 @@ writeStdoutImage(void *context, void *data, int size)
 static void
 printUsage(FILE *f, const char *prog)
 {
-	fprintf(f, "%s [-h] [-i file] [-o file] [-stdin] [-stdout]\n", prog);
+	fprintf(f,
+		"%s [-h] [-i file] [-o file] [-stdin] [-stdout] [-width w] "
+		"[-height h]\n",
+		prog);
 }
 
 static inline void

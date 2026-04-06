@@ -826,7 +826,7 @@ run(struct pie *pie, GLFWwindow *window)
 }
 
 ALWAYS_INLINE void
-quit(struct pie* pie)
+quit(struct pie *pie)
 {
 	fputc('\n', stderr);
 	writeOutput(pie, pie->canvas.img);

@@ -7,7 +7,6 @@ pie: mannikim's personal image editor
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
-- [ ] check out what perror() is talking about after glfwInit
 +++ end todo +++
 */
 
@@ -289,7 +288,8 @@ grImageUpdate(struct Image img)
 ALWAYS_INLINE bool
 grInit(struct pie *pie, GLFWwindow **window)
 {
-	glfwInit();
+	if (!glfwInit())
+		return false;
 
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);

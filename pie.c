@@ -7,6 +7,7 @@ pie: mannikim's personal image editor
 
 +++ todo +++
 - [ ] draw straight line when shift is pressed
+- [ ] check out what perror() is talking about after glfwInit
 +++ end todo +++
 */
 
@@ -742,7 +743,7 @@ askColor(struct ColorRGBA *out)
 
 	if (pipe(fd) == -1)
 	{
-		perror("Pipe failed");
+		perror("\r\033[Kpipe failed");
 		return;
 	}
 
@@ -750,7 +751,9 @@ askColor(struct ColorRGBA *out)
 
 	if (pid < 0)
 	{
-		perror("Fork failed");
+		close(fd[0]);
+		close(fd[1]);
+		perror("\r\033[Kfork failed");
 		return;
 	}
 
@@ -763,7 +766,7 @@ askColor(struct ColorRGBA *out)
 
 		execvp(colorPaletteCmd[0], colorPaletteCmd);
 
-		perror("exec failed");
+		perror("\r\033[Kexec failed");
 		_exit(EXIT_FAILURE);
 	}
 
@@ -773,14 +776,14 @@ askColor(struct ColorRGBA *out)
 	if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
 	{
 		close(fd[0]);
-		fprintf(stderr, "\r\033Failed to read from color picker");
+		fprintf(stderr, "\r\033[KFailed to read from color picker\n");
 		return;
 	}
 
 	buffer[8] = 0;
 
 	if (!storgba(buffer, out))
-		fprintf(stderr, "\r\033[KFailed to parse color %s", buffer);
+		fprintf(stderr, "\r\033[KFailed to parse color %s\n", buffer);
 
 	close(fd[0]);
 }

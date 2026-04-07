@@ -7,7 +7,7 @@ CFLAGS := -std=c99 -Os -Wall -Wpedantic -Wextra
 PREFIX := /usr/local
 LIBS := -lGL -lglfw -lGLEW -lm
 
-all: pie pcp
+all: pie pcp piec
 
 pie: pie.c common.h
 	$(CC) $< -o $@ $(CFLAGS) $(LIBS)
@@ -15,16 +15,23 @@ pie: pie.c common.h
 pcp: pcp.c common.h
 	$(CC) $< -o $@ $(CFLAGS) $(LIBS)
 
-install: pie pcp
+piec: piec.c
+	$(CC) $< -o $@ $(CFLAGS)
+
+install: pie pcp pie-cp piec
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
 	cp pie $(DESTDIR)$(PREFIX)/bin
 	cp pcp $(DESTDIR)$(PREFIX)/bin
+	cp piec $(DESTDIR)$(PREFIX)/bin
+	cp pie-cp $(DESTDIR)$(PREFIX)/bin
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/pie
 	rm -f $(DESTDIR)$(PREFIX)/bin/pcp
+	rm -f $(DESTDIR)$(PREFIX)/bin/piec
+	rm -f $(DESTDIR)$(PREFIX)/bin/pie-cp
 
 clean:
-	rm -f pie
+	rm -f pie pcp piec
 
 .PHONY: all clean install uninstall

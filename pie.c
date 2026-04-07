@@ -80,8 +80,7 @@ mouseJustUp(struct Canvas *canvas);
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
-/* TODO: make proper pcp script */
-static char *colorPaletteCmd[] = {"pcp", NULL};
+static const char *colorPickCmd[] = {"pcp", NULL};
 
 #define KEY_COLOR_PALETTE GLFW_KEY_Q
 #define KEY_BRUSH_INC_SIZE GLFW_KEY_P
@@ -764,7 +763,7 @@ askColor(struct ColorRGBA *out)
 		dup2(fd[1], STDOUT_FILENO);
 		close(fd[1]);
 
-		execvp(colorPaletteCmd[0], colorPaletteCmd);
+		execvp(colorPickCmd[0], (void *)colorPickCmd);
 
 		perror("\r\033[Kexec failed");
 		_exit(EXIT_FAILURE);

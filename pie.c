@@ -68,7 +68,7 @@ static const char *canvasFragSrc = "#version 330 core\n"
 				   "}";
 
 static void
-run(char **cmd);
+runCmd(const char **cmd);
 
 ALWAYS_INLINE void
 mouseJustUp(struct Canvas *canvas);
@@ -83,7 +83,7 @@ mouseJustUp(struct Canvas *canvas);
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
-static char *colorPickCmd[] = {"pie-cp", NULL};
+static const char *colorPickCmd[] = {"pie-cp", NULL};
 
 #define KEY_COLOR_PALETTE GLFW_KEY_Q
 #define KEY_BRUSH_INC_SIZE GLFW_KEY_P
@@ -165,7 +165,7 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	glfwMakeContextCurrent(window);
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
-		run(colorPickCmd);
+		runCmd(colorPickCmd);
 	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
 		pie->brushSize -= .5;
 	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
@@ -290,7 +290,8 @@ grImageUpdate(struct Image img)
 ALWAYS_INLINE bool
 grInit(struct pie *pie, GLFWwindow **window)
 {
-	glfwInit();
+	if (!glfwInit())
+		return false;
 
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
@@ -738,21 +739,21 @@ storgba(const char *str, struct ColorRGBA *out)
 }
 
 static void
-run(char **cmd)
+runCmd(const char **cmd)
 {
 	pid_t pid = fork();
 
 	if (pid < 0)
 	{
-		perror("Fork failed");
+		perror("\r\033[Kfork failed");
 		return;
 	}
 
 	if (pid == 0)
 	{
-		execvp(cmd[0], cmd);
+		execvp(cmd[0], (void *)cmd);
 
-		perror("exec failed");
+		perror("\r\033[Kexec failed");
 		_exit(EXIT_FAILURE);
 	}
 }
@@ -770,7 +771,7 @@ setupFifo(int *outFd)
 }
 
 ALWAYS_INLINE void
-runCmd(struct pie *pie, const char *cmd)
+runFifoCmd(struct pie *pie, const char *cmd)
 {
 	if (strncmp(cmd, "setcolor ", 9) == 0)
 	{
@@ -818,7 +819,68 @@ pollFifo(struct pie *pie, fd_set *rfds)
 	}
 	buffer[n] = '\0';
 	buffer[strcspn(buffer, "\n")] = '\0';
-	runCmd(pie, buffer);
+	runFifoCmd(pie, buffer);
+}
+
+ALWAYS_INLINE void
+run(struct pie *pie, GLFWwindow *window)
+{
+	struct Vec2f m, lastM;
+	glfwGetCursorPos(window, &m.x, &m.y);
+	fd_set rfst;
+
+	while (!glfwWindowShouldClose(window) && !pie->quit)
+	{
+		lastM.x = m.x;
+		lastM.y = m.y;
+		glfwGetCursorPos(window, &m.x, &m.y);
+		struct Vec2f rs = mtScreen2Canvas(
+			m, pie->canvas.tr.pos, pie->canvas.scale);
+		fprintf(stderr,
+			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
+			"%x%x%x%x",
+			pie->canvas.img.w,
+			pie->canvas.img.h,
+			pie->brushSize,
+			rs.x,
+			rs.y,
+			pie->color.r,
+			pie->color.g,
+			pie->color.b,
+			pie->color.a);
+
+		glClear(GL_COLOR_BUFFER_BIT);
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
+		grDrawImage(pie->canvas.vao);
+
+		if (pie->m0Down)
+		{
+			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
+			grDrawImage(pie->canvas.vao);
+		}
+
+		glfwSwapBuffers(window);
+		glfwPollEvents();
+		pollFifo(pie, &rfst);
+
+		if (pie->m0Down)
+			mouseDown(pie, pie->canvas.drw, lastM, m);
+	}
+}
+
+ALWAYS_INLINE void
+quit(struct pie *pie)
+{
+	fputc('\n', stderr);
+	writeOutput(pie, pie->canvas.img);
+	glDeleteTextures(1, &pie->canvas.grImg.tex);
+	glDeleteTextures(1, &pie->canvas.grDrw.tex);
+	glDeleteVertexArrays(1, &pie->canvas.vao);
+	glDeleteProgram(pie->canvas.sh.id);
+	glfwTerminate();
+	free(pie->canvas.img.data);
+	free(pie->canvas.drw.data);
+	close(pie->fifofd);
 }
 
 int
@@ -827,14 +889,12 @@ main(int argc, char **argv)
 	struct pie pie = {0};
 	pie.canvas.img = (struct Image){0, 50, 50};
 	pie.canvas.drw = (struct Image){0, 50, 50};
-	parseArguments(&pie, argc, argv);
-	fd_set rfst;
-	setupFifo(&pie.fifofd);
-
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.brushSize = 1;
 
+	parseArguments(&pie, argc, argv);
 	loadInputFile(&pie);
+	setupFifo(&pie.fifofd);
 
 	GLFWwindow *window;
 	if (!grInit(&pie, &window))
@@ -843,59 +903,7 @@ main(int argc, char **argv)
 	canvasAlign(&pie.canvas);
 	grCanvasInitGr(&pie.canvas);
 
-	struct Vec2f m, lastM;
-	glfwGetCursorPos(window, &m.x, &m.y);
-
-	while (!glfwWindowShouldClose(window) && !pie.quit)
-	{
-		lastM.x = m.x;
-		lastM.y = m.y;
-		glfwGetCursorPos(window, &m.x, &m.y);
-		struct Vec2f rs = mtScreen2Canvas(
-			m, pie.canvas.tr.pos, pie.canvas.scale);
-		fprintf(stderr,
-			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
-			"%02x%02x%02x%02x ",
-			pie.canvas.img.w,
-			pie.canvas.img.h,
-			pie.brushSize,
-			rs.x,
-			rs.y,
-			pie.color.r,
-			pie.color.g,
-			pie.color.b,
-			pie.color.a);
-
-		glClear(GL_COLOR_BUFFER_BIT);
-		glBindTexture(GL_TEXTURE_2D, pie.canvas.grImg.tex);
-		grDrawImage(pie.canvas.vao);
-
-		if (pie.m0Down)
-		{
-			glBindTexture(GL_TEXTURE_2D, pie.canvas.grDrw.tex);
-			grDrawImage(pie.canvas.vao);
-		}
-
-		glfwSwapBuffers(window);
-		glfwPollEvents();
-		pollFifo(&pie, &rfst);
-
-		if (pie.m0Down)
-			mouseDown(&pie, pie.canvas.drw, lastM, m);
-	}
-
-	fputc('\n', stderr);
-	writeOutput(&pie, pie.canvas.img);
-
-	glDeleteTextures(1, &pie.canvas.grImg.tex);
-	glDeleteTextures(1, &pie.canvas.grDrw.tex);
-	glDeleteVertexArrays(1, &pie.canvas.vao);
-	glDeleteProgram(pie.canvas.sh.id);
-
-	glfwTerminate();
-	free(pie.canvas.img.data);
-	free(pie.canvas.drw.data);
-	close(pie.fifofd);
-
+	run(&pie, window);
+	quit(&pie);
 	return EXIT_SUCCESS;
 }

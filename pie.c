@@ -809,13 +809,17 @@ run(struct pie *pie, GLFWwindow *window)
 		struct Vec2f rs = mtScreen2Canvas(
 			m, pie->canvas.tr.pos, pie->canvas.scale);
 		fprintf(stderr,
-			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor %x ",
+			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
+			"%x%x%x%x",
 			pie->canvas.img.w,
 			pie->canvas.img.h,
 			pie->brushSize,
 			rs.x,
 			rs.y,
-			*(unsigned int *)(void **)&pie->color);
+			pie->color.r,
+			pie->color.g,
+			pie->color.b,
+			pie->color.a);
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
@@ -857,14 +861,12 @@ main(int argc, char **argv)
 	struct pie pie = {0};
 	pie.canvas.img = (struct Image){0, 50, 50};
 	pie.canvas.drw = (struct Image){0, 50, 50};
-	parseArguments(&pie, argc, argv);
-	setupSock(socketPath, &pie.sockfd);
-
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.brushSize = 1;
 
 	parseArguments(&pie, argc, argv);
 	loadInputFile(&pie);
+	setupSock(socketPath, &pie.sockfd);
 
 	GLFWwindow *window;
 	if (!grInit(&pie, &window))

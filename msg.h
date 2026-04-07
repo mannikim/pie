@@ -5,7 +5,12 @@ enum MsgType {
 	MSG_SET_COLOR,
 };
 
+union MsgData {
+	uint64_t u64;
+	struct ColorRGBA color;
+};
+
 struct Msg {
 	uint64_t id;
-	uint64_t data;
+	union MsgData data;
 };

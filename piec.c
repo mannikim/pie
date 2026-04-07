@@ -13,11 +13,11 @@ piec: communicate with a pie instance via a unix domain socket */
 #include <sys/un.h>
 #include <unistd.h>
 
-#include "msg.h"
-
 struct ColorRGBA {
 	unsigned char r, g, b, a;
 };
+
+#include "msg.h"
 
 static bool
 stobyte(const char *str, uint8_t *out)
@@ -95,8 +95,8 @@ main(int argc, char **argv)
 			fprintf(stderr, "Missing color for setcolor\n");
 			goto exit_fail;
 		}
-		struct Msg m = {MSG_SET_COLOR, 0};
-		if (!storgba(argv[3], (struct ColorRGBA *)&m.data))
+		struct Msg m = {MSG_SET_COLOR, {0}};
+		if (!storgba(argv[3], &m.data.color))
 		{
 			fprintf(stderr, "Failed to parse color %s\n", argv[3]);
 			goto exit_fail;
@@ -111,7 +111,7 @@ main(int argc, char **argv)
 
 	if (strcmp(argv[2], "getcolor") == 0)
 	{
-		struct Msg m = {MSG_GET_COLOR, 0};
+		struct Msg m = {MSG_GET_COLOR, {0}};
 		if (write(fd, &m, sizeof(m)) == -1)
 		{
 			perror("write failed");

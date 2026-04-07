@@ -749,7 +749,7 @@ runMsg(struct pie *pie, struct Msg m, int fd)
 		write(fd, &pie->color, sizeof(pie->color));
 		return;
 	case MSG_SET_COLOR:
-		pie->color = *(struct ColorRGBA *)&m.data;
+		pie->color = m.data.color;
 		return;
 	default:
 		fprintf(stderr, "\r\033[KUnknown message id \"%lu\"\n", m.id);

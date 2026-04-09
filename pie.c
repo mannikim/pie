@@ -3,14 +3,12 @@
  * this file is part of pie
  * see LICENSE file for the license text */
 
+#include <arpa/inet.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
 
 #include "common.h"
 
@@ -363,13 +361,6 @@ readFileFull(FILE *file, size_t *outSize)
 }
 
 static void
-writeStdoutImage(void *context, void *data, int size)
-{
-	(void)context;
-	fwrite(data, 1, (size_t)size, stdout);
-}
-
-static void
 printUsage(FILE *f, const char *prog)
 {
 	fprintf(f,
@@ -468,25 +459,40 @@ parseArguments(struct pie *pie, int argc, char **argv)
 }
 
 ALWAYS_INLINE void
+ffwrite(FILE *f, struct Image img)
+{
+	fputs("farbfeld", f);
+	uint32_t x = htonl((uint32_t)img.w);
+	fwrite(&x, sizeof(x), 1, f);
+	x = htonl((uint32_t)img.h);
+	fwrite(&x, sizeof(x), 1, f);
+	for (int i = 0; i < img.w * img.h; i++)
+	{
+		uint16_t y = img.data[i].r * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+		y = img.data[i].g * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+		y = img.data[i].b * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+		y = img.data[i].a * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+	}
+}
+
+ALWAYS_INLINE void
 writeOutput(struct pie *pie, struct Image img)
 {
+	FILE *f = stdout;
 	if (pie->outFile)
 	{
-		stbi_write_png(pie->outFile,
-			       img.w,
-			       img.h,
-			       4,
-			       img.data,
-			       img.w * (int)sizeof(*img.data));
-		return;
+		f = fopen(pie->outFile, "wb");
+		if (f == NULL)
+		{
+			perror("\r\033[Kfailed to write output");
+			return;
+		}
 	}
-
-	if (!pie->useStdout)
-		return;
-
-	int stride = img.w * (int)sizeof(*img.data);
-	stbi_write_png_to_func(
-		writeStdoutImage, NULL, img.w, img.h, 4, img.data, stride);
+	ffwrite(f, img);
 }
 
 ALWAYS_INLINE void

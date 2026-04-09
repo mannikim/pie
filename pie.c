@@ -168,9 +168,9 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 		sampleImg(pie->canvas.img, (int)rs.x, (int)rs.y, &pie->color);
 	}
 	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
-		pie->brushSize -= .5;
+		pie->brushSize--;
 	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
-		pie->brushSize += .5;
+		pie->brushSize++;
 	if (key == KEY_QUIT_NOSAVE && action != GLFW_RELEASE &&
 	    mod == GLFW_MOD_SHIFT)
 	{
@@ -617,7 +617,6 @@ strokeSizePencil(struct Image read,
 		 struct Vec2i v0,
 		 struct Vec2i v1)
 {
-	size /= 2;
 	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2i absd = {abs(d.x), abs(d.y)};
 	double count = absd.x > absd.y ? absd.x : absd.y;
@@ -665,7 +664,7 @@ mouseDown(struct pie *pie,
 		strokeSizePencil(pie->canvas.img,
 				 buffer,
 				 pie->color,
-				 pie->brushSize,
+				 pie->brushSize / 2,
 				 (struct Vec2i){(int)rs.x, (int)rs.y},
 				 (struct Vec2i){(int)re.x, (int)re.y});
 

@@ -536,21 +536,15 @@ mouseDown(struct pie *pie,
 	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
 	if (mtBoundsZero(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
 	{
-		struct Vec2f re;
-
-		re.x = (end.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
+		struct Vec2f re = mtScreen2Canvas(end, &pie->canvas);
 		re.x = mtClampd(re.x, 0, pie->canvas.img.w - 1);
-
-		re.y = (end.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
 		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
-
 		strokeSizePencil(pie->canvas.img,
 				 buffer,
 				 pie->color,
 				 pie->brushSize / 2,
 				 (struct Vec2i){(int)rs.x, (int)rs.y},
 				 (struct Vec2i){(int)re.x, (int)re.y});
-
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
 		grImageUpdate(pie->canvas.drw);
 	}

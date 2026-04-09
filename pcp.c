@@ -1,13 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * copyright 2025-2026 mannikim <mannikim[at]proton[dot]me>
  * this file is part of pie
- * see LICENSE file for the license text
-
-pcp: mannikim's personal color picker
-
-+++ todo +++
-+++ end todo +++
-*/
+ * see LICENSE file for the license text */
 
 #include <math.h>
 #include <stdlib.h>

@@ -1,0 +1,67 @@
+pie: mannikim's personal image editor
+===
+provides `pie`, the image editor and `pcp`, a color picker program
+
+features
+- support for a variety of image formats
+- stdin/stdout
+- simple terminal ui
+- <2k loc (ignoring the stb_image*.h files :/)
+
+usage
+---
+use `pie -h` for usage
+
+pie uses stderr for displaying a simple tui. this allows the program to
+display text-based information without implementing font loading & rendering
+to the program
+
+pcp takes no arguments and always returns the selected color in the stdout
+
+configuring
+---
+configure pie by editing the source code and recompiling
+
+build
+---
+building requires a c99 compiler, libm, GLFW and GLEW
+
+the compiler needs to support `__attribute__((always_inline))`, or you can
+change the definition of the `ALWAYS_INLINE` macro in `common.h`
+
+building
+
+    make
+
+install
+
+    make install
+
+branches
+---
+i made these branches because they implement features not required for the
+base program and haven't completely stable api's yet
+
+fifo: implements fifo-based ipc
+attempt at making pie more modular
+use /tmp/pie.fifo as the fifo path
+
+uds: implements unix-domain socket-based ipc
+made to replace fifo
+duplex communication allows for better integration with other programs
+use /tmp/pie.sock as the socket path
+use `piec` to communicate with pie
+
++++ todo +++
+- versioning
+- proper api for fifo / uds
+# pie
+- draw straight line when shift is pressed
+- eraser
+- fill tool
+- sample from image
+- simpler alternative to stb_image for file formats
+# pcp
+- alpha slider
++++ end todo +++
+

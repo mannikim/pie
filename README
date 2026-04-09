@@ -3,10 +3,10 @@ pie: mannikim's personal image editor
 provides `pie`, the image editor and `pcp`, a color picker program
 
 features
-- support for a variety of image formats
+- uses farbfeld as the image format. see https://tools.suckless.org/farbfeld
 - stdin/stdout
 - simple terminal ui
-- <2k loc (ignoring the stb_image*.h files :/)
+- <2k loc
 
 usage
 ---
@@ -59,9 +59,6 @@ use `piec` to communicate with pie
 - draw straight line when shift is pressed
 - eraser
 - fill tool
-- sample from image
-- simpler alternative to stb_image for file formats
 # pcp
 - alpha slider
 +++ end todo +++
-

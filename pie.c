@@ -39,9 +39,7 @@ struct Canvas {
 };
 
 struct pie {
-	char *inFile, *outFile;
 	bool useStdin, useStdout, quit, m0Down;
-
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
@@ -173,7 +171,6 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	    mod == GLFW_MOD_SHIFT)
 	{
 		pie->useStdout = false;
-		pie->outFile = NULL;
 		pie->quit = true;
 	}
 }
@@ -326,47 +323,10 @@ canvasAlign(struct Canvas *canvas)
 	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
 }
 
-static uint8_t *
-readFileFull(FILE *file, size_t *outSize)
-{
-	size_t size = 0;
-	size_t capacity = 4096;
-	unsigned char *buffer = malloc(capacity);
-	if (!buffer)
-		return NULL;
-
-	int c = fgetc(file);
-	while (c != EOF)
-	{
-		if (size < capacity)
-		{
-			buffer[size++] = (unsigned char)c;
-			c = fgetc(file);
-			continue;
-		}
-
-		capacity *= 2;
-		unsigned char *newBuffer = realloc(buffer, capacity);
-		if (!newBuffer)
-		{
-			free(buffer);
-			return NULL;
-		}
-
-		buffer = newBuffer;
-	}
-
-	*outSize = size;
-	return buffer;
-}
-
 static void
 printUsage(FILE *f, const char *prog)
 {
-	fprintf(f,
-		"%s [-h] [-i file] [-o file] [-stdin] [-stdout] [-width w] "
-		"[-height h]\n",
-		prog);
+	fprintf(f, "%s [-h] [-i] [-o] [-width w] [-height h]\n", prog);
 }
 
 static inline void
@@ -374,36 +334,14 @@ parseArguments(struct pie *pie, int argc, char **argv)
 {
 	for (int i = 1; i < argc; i++)
 	{
-		if (strcmp(argv[i], "-stdin") == 0)
+		if (strcmp(argv[i], "-i") == 0)
 		{
 			pie->useStdin = true;
 			continue;
 		}
-		if (strcmp(argv[i], "-stdout") == 0)
-		{
-			pie->useStdout = true;
-			continue;
-		}
 		if (strcmp(argv[i], "-o") == 0)
 		{
-			i++;
-			if (i >= argc)
-			{
-				fprintf(stderr, "Missing output file name\n");
-				exit(EXIT_FAILURE);
-			}
-			pie->outFile = argv[i];
-			continue;
-		}
-		if (strcmp(argv[i], "-i") == 0)
-		{
-			i++;
-			if (i >= argc)
-			{
-				fprintf(stderr, "Missing input file name\n");
-				exit(EXIT_FAILURE);
-			}
-			pie->inFile = argv[i];
+			pie->useStdout = true;
 			continue;
 		}
 		if (strcmp(argv[i], "-h") == 0)
@@ -444,16 +382,6 @@ parseArguments(struct pie *pie, int argc, char **argv)
 		}
 
 		fprintf(stderr, "Failed to parse flag %s\n", argv[i]);
-		exit(EXIT_FAILURE);
-	}
-	if (pie->useStdin && pie->inFile)
-	{
-		fprintf(stderr, "Can't use both -i and -stdin.\n");
-		exit(EXIT_FAILURE);
-	}
-	if (pie->useStdout && pie->outFile)
-	{
-		fprintf(stderr, "Can't use both -o and -stdout.\n");
 		exit(EXIT_FAILURE);
 	}
 }
@@ -527,23 +455,6 @@ ffread(FILE *f, struct Canvas *canvas)
 	canvas->drw.h = canvas->img.h;
 }
 
-ALWAYS_INLINE void
-writeOutput(struct pie *pie, struct Image img)
-{
-	if (pie->outFile)
-	{
-		FILE *f = fopen(pie->outFile, "wb");
-		if (f == NULL)
-		{
-			perror("\r\033[Kfailed to write output");
-			return;
-		}
-		ffwrite(f, img);
-	}
-	if (pie->useStdout)
-		ffwrite(stdout, img);
-}
-
 static void
 newBlankCanvas(struct Canvas *canvas)
 {
@@ -578,19 +489,6 @@ loadInputFile(struct pie *pie)
 		ffread(stdin, &pie->canvas);
 		return;
 	}
-
-	if (pie->inFile)
-	{
-		FILE *f = fopen(pie->inFile, "rb");
-		if (f == NULL)
-		{
-			perror("failed to open input file");
-			exit(EXIT_FAILURE);
-		}
-		ffread(f, &pie->canvas);
-		return;
-	}
-
 	newBlankCanvas(&pie->canvas);
 }
 
@@ -825,7 +723,8 @@ ALWAYS_INLINE void
 quit(struct pie *pie)
 {
 	fputc('\n', stderr);
-	writeOutput(pie, pie->canvas.img);
+	if (pie->useStdout)
+		ffwrite(stdout, pie->canvas.img);
 	glDeleteTextures(1, &pie->canvas.grImg.tex);
 	glDeleteTextures(1, &pie->canvas.grDrw.tex);
 	glDeleteVertexArrays(1, &pie->canvas.vao);

@@ -807,7 +807,7 @@ run(struct pie *pie, GLFWwindow *window)
 		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
 		fprintf(stderr,
 			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
-			"%x%x%x%x",
+			"%02x%02x%02x%02x",
 			pie->canvas.img.w,
 			pie->canvas.img.h,
 			pie->brushSize,

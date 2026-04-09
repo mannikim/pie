@@ -246,10 +246,9 @@ grCanvasGenShader(void)
 	return shader;
 }
 
-static void
-grDrawImage(unsigned int vao)
+ALWAYS_INLINE void
+grDrawImage(void)
 {
-	glBindVertexArray(vao);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
@@ -697,12 +696,12 @@ run(struct pie *pie, GLFWwindow *window)
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
-		grDrawImage(pie->canvas.vao);
+		grDrawImage();
 
 		if (pie->m0Down)
 		{
 			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
-			grDrawImage(pie->canvas.vao);
+			grDrawImage();
 		}
 
 		glfwSwapBuffers(window);

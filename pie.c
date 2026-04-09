@@ -47,6 +47,7 @@ struct pie {
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
+	struct Vec2f m, lastM;
 };
 
 static const char *canvasFragSrc = "#version 330 core\n"
@@ -59,6 +60,9 @@ static const char *canvasFragSrc = "#version 330 core\n"
 
 static void
 askColor(struct ColorRGBA *out);
+
+ALWAYS_INLINE void
+sampleImg(struct Image i, int x, int y, struct ColorRGBA *out);
 
 ALWAYS_INLINE void
 mouseJustUp(struct Canvas *canvas);
@@ -79,6 +83,7 @@ static const char *colorPickCmd[] = {"pcp", NULL};
 #define KEY_BRUSH_INC_SIZE GLFW_KEY_P
 #define KEY_BRUSH_DEC_SIZE GLFW_KEY_O
 #define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
+#define KEY_SAMPLE GLFW_KEY_S
 
 ALWAYS_INLINE double
 mtScaleFitIn(double w0, double h0, double w1, double h1)
@@ -124,9 +129,10 @@ mtStepCount(struct Vec2i d, double w, double h)
 }
 
 ALWAYS_INLINE struct Vec2f
-mtScreen2Canvas(struct Vec2f mp, struct Vec2f cp, double cs)
+mtScreen2Canvas(struct Vec2f mp, struct Canvas *c)
 {
-	return (struct Vec2f){(mp.x - cp.x) / cs, (mp.y - cp.y) / cs};
+	return (struct Vec2f){(mp.x - c->tr.pos.x) / c->scale,
+			      (mp.y - c->tr.pos.y) / c->scale};
 }
 
 static void
@@ -156,6 +162,11 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
 		askColor(&pie->color);
+	if (key == KEY_SAMPLE && action != GLFW_RELEASE)
+	{
+		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
+		sampleImg(pie->canvas.img, (int)rs.x, (int)rs.y, &pie->color);
+	}
 	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
 		pie->brushSize -= .5;
 	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
@@ -640,9 +651,7 @@ mouseDown(struct pie *pie,
 	  struct Vec2f start,
 	  struct Vec2f end)
 {
-	struct Vec2f rs =
-		mtScreen2Canvas(start, pie->canvas.tr.pos, pie->canvas.scale);
-
+	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
 	if (mtBoundsZero(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
 	{
 		struct Vec2f re;
@@ -781,18 +790,22 @@ askColor(struct ColorRGBA *out)
 }
 
 ALWAYS_INLINE void
+sampleImg(struct Image i, int x, int y, struct ColorRGBA *out)
+{
+	if (mtBoundsZero(x, y, i.w, i.h))
+		*out = i.data[x + y * i.w];
+}
+
+ALWAYS_INLINE void
 run(struct pie *pie, GLFWwindow *window)
 {
-	struct Vec2f m, lastM;
-	glfwGetCursorPos(window, &m.x, &m.y);
-
+	glfwGetCursorPos(window, &pie->m.x, &pie->m.y);
 	while (!glfwWindowShouldClose(window) && !pie->quit)
 	{
-		lastM.x = m.x;
-		lastM.y = m.y;
-		glfwGetCursorPos(window, &m.x, &m.y);
-		struct Vec2f rs = mtScreen2Canvas(
-			m, pie->canvas.tr.pos, pie->canvas.scale);
+		pie->lastM.x = pie->m.x;
+		pie->lastM.y = pie->m.y;
+		glfwGetCursorPos(window, &pie->m.x, &pie->m.y);
+		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
 		fprintf(stderr,
 			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
 			"%x%x%x%x",
@@ -820,7 +833,7 @@ run(struct pie *pie, GLFWwindow *window)
 		glfwPollEvents();
 
 		if (pie->m0Down)
-			mouseDown(pie, pie->canvas.drw, lastM, m);
+			mouseDown(pie, pie->canvas.drw, pie->lastM, pie->m);
 	}
 }
 

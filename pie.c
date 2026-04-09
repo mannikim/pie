@@ -4,11 +4,11 @@
  * see LICENSE file for the license text */
 
 #include <arpa/inet.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
 #include "common.h"
 
@@ -458,7 +458,7 @@ parseArguments(struct pie *pie, int argc, char **argv)
 	}
 }
 
-ALWAYS_INLINE void
+static void
 ffwrite(FILE *f, struct Image img)
 {
 	fputs("farbfeld", f);
@@ -479,96 +479,69 @@ ffwrite(FILE *f, struct Image img)
 	}
 }
 
+static void
+ffread(FILE *f, struct Canvas *canvas)
+{
+	uint32_t header[4];
+	fread(header, sizeof(header), 1, f);
+	if (header[0] != 0x62726166 && header[1] != 0x646c6566)
+	{
+		fprintf(stderr, "failed to parse farbfeld magic value\n");
+		exit(EXIT_FAILURE);
+	}
+
+	canvas->img.w = (signed)ntohl(header[2]);
+	canvas->img.h = (signed)ntohl(header[3]);
+	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
+	canvas->img.data = malloc(pixels * sizeof(struct ColorRGBA));
+	if (canvas->img.data == NULL)
+	{
+		perror("malloc failed");
+		exit(EXIT_FAILURE);
+	}
+
+	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
+	if (canvas->drw.data == NULL)
+	{
+		free(canvas->img.data);
+		perror("calloc failed");
+		exit(EXIT_FAILURE);
+	}
+
+	for (size_t i = 0; i < pixels; i++)
+	{
+		struct ColorRGBA c;
+		uint16_t x;
+		fread(&x, sizeof(x), 1, f);
+		c.r = x / 257;
+		fread(&x, sizeof(x), 1, f);
+		c.g = x / 257;
+		fread(&x, sizeof(x), 1, f);
+		c.b = x / 257;
+		fread(&x, sizeof(x), 1, f);
+		c.a = x / 257;
+		canvas->img.data[i] = c;
+	}
+
+	canvas->drw.w = canvas->img.w;
+	canvas->drw.h = canvas->img.h;
+}
+
 ALWAYS_INLINE void
 writeOutput(struct pie *pie, struct Image img)
 {
-	FILE *f = stdout;
 	if (pie->outFile)
 	{
-		f = fopen(pie->outFile, "wb");
+		FILE *f = fopen(pie->outFile, "wb");
 		if (f == NULL)
 		{
 			perror("\r\033[Kfailed to write output");
 			return;
 		}
+		ffwrite(f, img);
 	}
-	ffwrite(f, img);
-}
-
-ALWAYS_INLINE void
-loadStdin(struct Canvas *canvas)
-{
-	size_t size;
-
-	/* stb_image.h requires a seekable file, so we can't use stdin
-	 * it is possible in some cases, like if you do
-	 * pie out.png - < img.png
-	 * but assuming we always can't makes the code simpler */
-	uint8_t *data = readFileFull(stdin, &size);
-
-	if (data == NULL)
-	{
-		perror("Error while reading standard input");
-		exit(EXIT_FAILURE);
-	}
-
-	canvas->img.data = (void *)stbi_load_from_memory(
-		data, (int)size, &canvas->img.w, &canvas->img.h, NULL, 4);
-	free(data);
-
-	if (canvas->img.data == NULL)
-	{
-		fprintf(stderr, "Failed to parse standard input\n");
-		exit(EXIT_FAILURE);
-	}
-
-	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
-	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
-
-	if (canvas->drw.data == NULL)
-	{
-		free(canvas->img.data);
-		fprintf(stderr, "Failed to parse standard input\n");
-		exit(EXIT_FAILURE);
-	}
-
-	canvas->drw.w = canvas->img.w;
-	canvas->drw.h = canvas->img.h;
-}
-
-ALWAYS_INLINE void
-loadArgFile(char *filename, struct Canvas *canvas)
-{
-	FILE *file = fopen(filename, "r");
-	if (file == NULL)
-	{
-		perror("Failed to open input file");
-		exit(EXIT_FAILURE);
-	}
-
-	canvas->img.data = (void *)stbi_load_from_file(
-		file, &canvas->img.w, &canvas->img.h, NULL, 4);
-
-	fclose(file);
-
-	if (canvas->img.data == NULL)
-	{
-		fprintf(stderr, "Failed to parse input file\n");
-		exit(EXIT_FAILURE);
-	}
-
-	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
-	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
-
-	if (canvas->drw.data == NULL)
-	{
-		free(canvas->img.data);
-		fprintf(stderr, "Failed to parse standard input\n");
-		exit(EXIT_FAILURE);
-	}
-
-	canvas->drw.w = canvas->img.w;
-	canvas->drw.h = canvas->img.h;
+	if (pie->useStdout)
+		ffwrite(stdout, img);
 }
 
 static void
@@ -602,13 +575,19 @@ loadInputFile(struct pie *pie)
 {
 	if (pie->useStdin)
 	{
-		loadStdin(&pie->canvas);
+		ffread(stdin, &pie->canvas);
 		return;
 	}
 
 	if (pie->inFile)
 	{
-		loadArgFile(pie->inFile, &pie->canvas);
+		FILE *f = fopen(pie->inFile, "rb");
+		if (f == NULL)
+		{
+			perror("failed to open input file");
+			exit(EXIT_FAILURE);
+		}
+		ffread(f, &pie->canvas);
 		return;
 	}
 

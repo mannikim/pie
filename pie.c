@@ -4,10 +4,8 @@
  * see LICENSE file for the license text */
 
 #include <arpa/inet.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "common.h"

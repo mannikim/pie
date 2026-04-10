@@ -5,5 +5,5 @@
 # see LICENSE file for the license text
 ans="$(pcp)"
 if [ ! -z "$?" ]; then
-	echo "setcolor $(pcp)" > /tmp/pie.fifo
+	echo "setcolor $ans" > /tmp/pie.fifo
 fi

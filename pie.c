@@ -3,16 +3,13 @@
  * this file is part of pie
  * see LICENSE file for the license text */
 
+#include <arpa/inet.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
 
 #include "common.h"
 #include "msg.h"
@@ -44,12 +41,11 @@ struct Canvas {
 };
 
 struct pie {
-	char *inFile, *outFile;
 	bool useStdin, useStdout, quit, m0Down;
-
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
+	struct Vec2f m, lastM;
 	int sockfd;
 };
 
@@ -63,6 +59,9 @@ static const char *canvasFragSrc = "#version 330 core\n"
 
 static void
 runCmd(const char **cmd);
+
+ALWAYS_INLINE void
+sampleImg(struct Image i, int x, int y, struct ColorRGBA *out);
 
 ALWAYS_INLINE void
 mouseJustUp(struct Canvas *canvas);
@@ -84,6 +83,7 @@ static const char *colorPickCmd[] = {"pie-cp", socketPath, NULL};
 #define KEY_BRUSH_INC_SIZE GLFW_KEY_P
 #define KEY_BRUSH_DEC_SIZE GLFW_KEY_O
 #define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
+#define KEY_SAMPLE GLFW_KEY_S
 
 ALWAYS_INLINE double
 mtScaleFitIn(double w0, double h0, double w1, double h1)
@@ -129,9 +129,10 @@ mtStepCount(struct Vec2i d, double w, double h)
 }
 
 ALWAYS_INLINE struct Vec2f
-mtScreen2Canvas(struct Vec2f mp, struct Vec2f cp, double cs)
+mtScreen2Canvas(struct Vec2f mp, struct Canvas *c)
 {
-	return (struct Vec2f){(mp.x - cp.x) / cs, (mp.y - cp.y) / cs};
+	return (struct Vec2f){(mp.x - c->tr.pos.x) / c->scale,
+			      (mp.y - c->tr.pos.y) / c->scale};
 }
 
 static void
@@ -161,15 +162,19 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	struct pie *pie = glfwGetWindowUserPointer(window);
 	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
 		runCmd(colorPickCmd);
+	if (key == KEY_SAMPLE && action != GLFW_RELEASE)
+	{
+		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
+		sampleImg(pie->canvas.img, (int)rs.x, (int)rs.y, &pie->color);
+	}
 	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
-		pie->brushSize -= .5;
+		pie->brushSize--;
 	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
-		pie->brushSize += .5;
+		pie->brushSize++;
 	if (key == KEY_QUIT_NOSAVE && action != GLFW_RELEASE &&
 	    mod == GLFW_MOD_SHIFT)
 	{
 		pie->useStdout = false;
-		pie->outFile = NULL;
 		pie->quit = true;
 	}
 }
@@ -244,11 +249,9 @@ grCanvasGenShader(void)
 
 	return shader;
 }
-
-static void
-grDrawImage(unsigned int vao)
+ALWAYS_INLINE void
+grDrawImage(void)
 {
-	glBindVertexArray(vao);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
@@ -322,54 +325,10 @@ canvasAlign(struct Canvas *canvas)
 	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
 }
 
-static uint8_t *
-readFileFull(FILE *file, size_t *outSize)
-{
-	size_t size = 0;
-	size_t capacity = 4096;
-	unsigned char *buffer = malloc(capacity);
-	if (!buffer)
-		return NULL;
-
-	int c = fgetc(file);
-	while (c != EOF)
-	{
-		if (size < capacity)
-		{
-			buffer[size++] = (unsigned char)c;
-			c = fgetc(file);
-			continue;
-		}
-
-		capacity *= 2;
-		unsigned char *newBuffer = realloc(buffer, capacity);
-		if (!newBuffer)
-		{
-			free(buffer);
-			return NULL;
-		}
-
-		buffer = newBuffer;
-	}
-
-	*outSize = size;
-	return buffer;
-}
-
-static void
-writeStdoutImage(void *context, void *data, int size)
-{
-	(void)context;
-	fwrite(data, 1, (size_t)size, stdout);
-}
-
 static void
 printUsage(FILE *f, const char *prog)
 {
-	fprintf(f,
-		"%s [-h] [-i file] [-o file] [-stdin] [-stdout] [-width w] "
-		"[-height h]\n",
-		prog);
+	fprintf(f, "%s [-h] [-i] [-o] [-width w] [-height h]\n", prog);
 }
 
 static inline void
@@ -377,36 +336,14 @@ parseArguments(struct pie *pie, int argc, char **argv)
 {
 	for (int i = 1; i < argc; i++)
 	{
-		if (strcmp(argv[i], "-stdin") == 0)
+		if (strcmp(argv[i], "-i") == 0)
 		{
 			pie->useStdin = true;
 			continue;
 		}
-		if (strcmp(argv[i], "-stdout") == 0)
-		{
-			pie->useStdout = true;
-			continue;
-		}
 		if (strcmp(argv[i], "-o") == 0)
 		{
-			i++;
-			if (i >= argc)
-			{
-				fprintf(stderr, "Missing output file name\n");
-				exit(EXIT_FAILURE);
-			}
-			pie->outFile = argv[i];
-			continue;
-		}
-		if (strcmp(argv[i], "-i") == 0)
-		{
-			i++;
-			if (i >= argc)
-			{
-				fprintf(stderr, "Missing input file name\n");
-				exit(EXIT_FAILURE);
-			}
-			pie->inFile = argv[i];
+			pie->useStdout = true;
 			continue;
 		}
 		if (strcmp(argv[i], "-h") == 0)
@@ -449,110 +386,71 @@ parseArguments(struct pie *pie, int argc, char **argv)
 		fprintf(stderr, "Failed to parse flag %s\n", argv[i]);
 		exit(EXIT_FAILURE);
 	}
-	if (pie->useStdin && pie->inFile)
+}
+
+static void
+ffwrite(FILE *f, struct Image img)
+{
+	fputs("farbfeld", f);
+	uint32_t x = htonl((uint32_t)img.w);
+	fwrite(&x, sizeof(x), 1, f);
+	x = htonl((uint32_t)img.h);
+	fwrite(&x, sizeof(x), 1, f);
+	for (int i = 0; i < img.w * img.h; i++)
 	{
-		fprintf(stderr, "Can't use both -i and -stdin.\n");
-		exit(EXIT_FAILURE);
-	}
-	if (pie->useStdout && pie->outFile)
-	{
-		fprintf(stderr, "Can't use both -o and -stdout.\n");
-		exit(EXIT_FAILURE);
+		uint16_t y = img.data[i].r * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+		y = img.data[i].g * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+		y = img.data[i].b * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
+		y = img.data[i].a * 257;
+		fwrite(&y, sizeof(uint16_t), 1, f);
 	}
 }
 
-ALWAYS_INLINE void
-writeOutput(struct pie *pie, struct Image img)
+static void
+ffread(FILE *f, struct Canvas *canvas)
 {
-	if (pie->outFile)
+	uint32_t header[4];
+	fread(header, sizeof(header), 1, f);
+	if (header[0] != 0x62726166 && header[1] != 0x646c6566)
 	{
-		stbi_write_png(pie->outFile,
-			       img.w,
-			       img.h,
-			       4,
-			       img.data,
-			       img.w * (int)sizeof(*img.data));
-		return;
-	}
-
-	if (!pie->useStdout)
-		return;
-
-	int stride = img.w * (int)sizeof(*img.data);
-	stbi_write_png_to_func(
-		writeStdoutImage, NULL, img.w, img.h, 4, img.data, stride);
-}
-
-ALWAYS_INLINE void
-loadStdin(struct Canvas *canvas)
-{
-	size_t size;
-
-	/* stb_image.h requires a seekable file, so we can't use stdin
-	 * it is possible in some cases, like if you do
-	 * pie out.png - < img.png
-	 * but assuming we always can't makes the code simpler */
-	uint8_t *data = readFileFull(stdin, &size);
-
-	if (data == NULL)
-	{
-		perror("Error while reading standard input");
+		fprintf(stderr, "failed to parse farbfeld magic value\n");
 		exit(EXIT_FAILURE);
 	}
 
-	canvas->img.data = (void *)stbi_load_from_memory(
-		data, (int)size, &canvas->img.w, &canvas->img.h, NULL, 4);
-	free(data);
-
+	canvas->img.w = (signed)ntohl(header[2]);
+	canvas->img.h = (signed)ntohl(header[3]);
+	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
+	canvas->img.data = malloc(pixels * sizeof(struct ColorRGBA));
 	if (canvas->img.data == NULL)
 	{
-		fprintf(stderr, "Failed to parse standard input\n");
+		perror("malloc failed");
 		exit(EXIT_FAILURE);
 	}
 
-	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
 	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
-
 	if (canvas->drw.data == NULL)
 	{
 		free(canvas->img.data);
-		fprintf(stderr, "Failed to parse standard input\n");
+		perror("calloc failed");
 		exit(EXIT_FAILURE);
 	}
 
-	canvas->drw.w = canvas->img.w;
-	canvas->drw.h = canvas->img.h;
-}
-
-ALWAYS_INLINE void
-loadArgFile(char *filename, struct Canvas *canvas)
-{
-	FILE *file = fopen(filename, "r");
-	if (file == NULL)
+	for (size_t i = 0; i < pixels; i++)
 	{
-		perror("Failed to open input file");
-		exit(EXIT_FAILURE);
-	}
-
-	canvas->img.data = (void *)stbi_load_from_file(
-		file, &canvas->img.w, &canvas->img.h, NULL, 4);
-
-	fclose(file);
-
-	if (canvas->img.data == NULL)
-	{
-		fprintf(stderr, "Failed to parse input file\n");
-		exit(EXIT_FAILURE);
-	}
-
-	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
-	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
-
-	if (canvas->drw.data == NULL)
-	{
-		free(canvas->img.data);
-		fprintf(stderr, "Failed to parse standard input\n");
-		exit(EXIT_FAILURE);
+		struct ColorRGBA c;
+		uint16_t x;
+		fread(&x, sizeof(x), 1, f);
+		c.r = x / 257;
+		fread(&x, sizeof(x), 1, f);
+		c.g = x / 257;
+		fread(&x, sizeof(x), 1, f);
+		c.b = x / 257;
+		fread(&x, sizeof(x), 1, f);
+		c.a = x / 257;
+		canvas->img.data[i] = c;
 	}
 
 	canvas->drw.w = canvas->img.w;
@@ -590,16 +488,9 @@ loadInputFile(struct pie *pie)
 {
 	if (pie->useStdin)
 	{
-		loadStdin(&pie->canvas);
+		ffread(stdin, &pie->canvas);
 		return;
 	}
-
-	if (pie->inFile)
-	{
-		loadArgFile(pie->inFile, &pie->canvas);
-		return;
-	}
-
 	newBlankCanvas(&pie->canvas);
 }
 
@@ -611,7 +502,6 @@ strokeSizePencil(struct Image read,
 		 struct Vec2i v0,
 		 struct Vec2i v1)
 {
-	size /= 2;
 	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2i absd = {abs(d.x), abs(d.y)};
 	double count = absd.x > absd.y ? absd.x : absd.y;
@@ -645,26 +535,18 @@ mouseDown(struct pie *pie,
 	  struct Vec2f start,
 	  struct Vec2f end)
 {
-	struct Vec2f rs =
-		mtScreen2Canvas(start, pie->canvas.tr.pos, pie->canvas.scale);
-
+	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
 	if (mtBoundsZero(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
 	{
-		struct Vec2f re;
-
-		re.x = (end.x - pie->canvas.tr.pos.x) / pie->canvas.scale;
+		struct Vec2f re = mtScreen2Canvas(end, &pie->canvas);
 		re.x = mtClampd(re.x, 0, pie->canvas.img.w - 1);
-
-		re.y = (end.y - pie->canvas.tr.pos.y) / pie->canvas.scale;
 		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
-
 		strokeSizePencil(pie->canvas.img,
 				 buffer,
 				 pie->color,
-				 pie->brushSize,
+				 pie->brushSize / 2,
 				 (struct Vec2i){(int)rs.x, (int)rs.y},
 				 (struct Vec2i){(int)re.x, (int)re.y});
-
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
 		grImageUpdate(pie->canvas.drw);
 	}
@@ -789,21 +671,25 @@ pollSock(struct pie *pie)
 }
 
 ALWAYS_INLINE void
+sampleImg(struct Image i, int x, int y, struct ColorRGBA *out)
+{
+	if (mtBoundsZero(x, y, i.w, i.h))
+		*out = i.data[x + y * i.w];
+}
+
+ALWAYS_INLINE void
 run(struct pie *pie, GLFWwindow *window)
 {
-	struct Vec2f m, lastM;
-	glfwGetCursorPos(window, &m.x, &m.y);
-
+	glfwGetCursorPos(window, &pie->m.x, &pie->m.y);
 	while (!glfwWindowShouldClose(window) && !pie->quit)
 	{
-		lastM.x = m.x;
-		lastM.y = m.y;
-		glfwGetCursorPos(window, &m.x, &m.y);
-		struct Vec2f rs = mtScreen2Canvas(
-			m, pie->canvas.tr.pos, pie->canvas.scale);
+		pie->lastM.x = pie->m.x;
+		pie->lastM.y = pie->m.y;
+		glfwGetCursorPos(window, &pie->m.x, &pie->m.y);
+		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
 		fprintf(stderr,
 			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
-			"%x%x%x%x",
+			"%02x%02x%02x%02x",
 			pie->canvas.img.w,
 			pie->canvas.img.h,
 			pie->brushSize,
@@ -816,12 +702,12 @@ run(struct pie *pie, GLFWwindow *window)
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
-		grDrawImage(pie->canvas.vao);
+		grDrawImage();
 
 		if (pie->m0Down)
 		{
 			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
-			grDrawImage(pie->canvas.vao);
+			grDrawImage();
 		}
 
 		glfwSwapBuffers(window);
@@ -829,7 +715,7 @@ run(struct pie *pie, GLFWwindow *window)
 		pollSock(pie);
 
 		if (pie->m0Down)
-			mouseDown(pie, pie->canvas.drw, lastM, m);
+			mouseDown(pie, pie->canvas.drw, pie->lastM, pie->m);
 	}
 }
 
@@ -837,7 +723,8 @@ ALWAYS_INLINE void
 quit(struct pie *pie)
 {
 	fputc('\n', stderr);
-	writeOutput(pie, pie->canvas.img);
+	if (pie->useStdout)
+		ffwrite(stdout, pie->canvas.img);
 	glDeleteTextures(1, &pie->canvas.grImg.tex);
 	glDeleteTextures(1, &pie->canvas.grDrw.tex);
 	glDeleteVertexArrays(1, &pie->canvas.vao);

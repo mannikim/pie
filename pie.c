@@ -72,8 +72,7 @@ static const char *colorPickCmd[] = {"pcp", NULL};
 inline double
 mtScaleFitIn(double w0, double h0, double w1, double h1)
 {
-	double r0 = w1 / w0;
-	double r1 = h1 / h0;
+	double r0 = w1 / w0, r1 = h1 / h0;
 	return r0 < r1 ? r0 : r1;
 }
 
@@ -408,50 +407,24 @@ mouseJustUp(struct Canvas *canvas)
 }
 
 static bool
-stobyte(const char *str, uint8_t *out)
+stobyte(const char *s, uint8_t *out)
 {
-	uint8_t n = 0;
-
-	if (str[0] >= 'a' && str[0] <= 'f')
-		n |= (uint8_t)(str[0] - 'a' + 10) << 4;
-	else if (str[0] >= '0' && str[0] <= '9')
-		n |= (uint8_t)(str[0] - '0') << 4;
-	else
+	uint8_t h = (uint8_t)((s[0] <= '9') ? s[0] - '0' : s[0] - 'a' + 10);
+	uint8_t l = (uint8_t)((s[1] <= '9') ? s[1] - '0' : s[1] - 'a' + 10);
+	if (h > 15 || l > 15)
 		return false;
-
-	if (str[1] >= 'a' && str[1] <= 'f')
-		n |= (uint8_t)(str[1] - 'a' + 10);
-	else if (str[1] >= '0' && str[1] <= '9')
-		n |= (uint8_t)(str[1] - '0');
-	else
-		return false;
-
-	*out = n;
+	*out = (uint8_t)((h << 4) | l);
 	return true;
 }
 
 static bool
 storgba(const char *str, struct ColorRGBA *out)
 {
-	union {
-		uint32_t b;
-		struct ColorRGBA c;
-	} color = {0};
-
+	uint8_t c[4];
 	for (size_t i = 0; i < 4; i++)
-	{
-		if (str[i] == '\0' || str[i + 1] == '\0')
+		if (!stobyte(&str[i * 2], &c[i]))
 			return false;
-
-		uint8_t byte;
-		if (!stobyte(&str[i * 2], &byte))
-			return false;
-
-		color.b |= (uint32_t)byte << (8 * i);
-	}
-
-	*out = color.c;
-
+	*out = *(struct ColorRGBA *)(void *)c;
 	return true;
 }
 
@@ -459,40 +432,34 @@ static void
 askColor(struct ColorRGBA *out)
 {
 	int fd[2];
-
 	if (pipe(fd) == -1)
 	{
 		perror("\r\033[Kpipe failed");
 		return;
 	}
 
-	pid_t pid = fork();
-
-	if (pid < 0)
+	switch (fork())
 	{
+	case 0:
+	{
+		close(fd[0]);
+		dup2(fd[1], STDOUT_FILENO);
+		close(fd[1]);
+		execvp(colorPickCmd[0], (void *)colorPickCmd);
+		perror("\r\033[Kexec failed");
+		_exit(EXIT_FAILURE);
+	}
+	case -1:
 		close(fd[0]);
 		close(fd[1]);
 		perror("\r\033[Kfork failed");
 		return;
 	}
 
-	if (pid == 0)
-	{
-		close(fd[0]);
-
-		dup2(fd[1], STDOUT_FILENO);
-		close(fd[1]);
-
-		execvp(colorPickCmd[0], (void *)colorPickCmd);
-
-		perror("\r\033[Kexec failed");
-		_exit(EXIT_FAILURE);
-	}
-
 	close(fd[1]);
 
 	char buffer[9] = {0};
-	if (read(fd[0], buffer, sizeof(buffer) - 1) <= 0)
+	if (read(fd[0], buffer, sizeof(buffer) - 1) != sizeof(buffer) - 1)
 	{
 		close(fd[0]);
 		fprintf(stderr, "\r\033[KFailed to read from color picker\n");

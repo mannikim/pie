@@ -8,6 +8,10 @@
 #include <string.h>
 #include <unistd.h>
 
+#define WIN_TITLE "pie"
+#define WINW 800
+#define WINH 800
+
 #include "common.h"
 
 struct Vec2i {
@@ -19,20 +23,12 @@ struct Image {
 	int w, h;
 };
 
-struct ImageGRData {
-	unsigned int tex;
-};
-
-struct ImageShaderData {
-	unsigned int id, uTr, uWin;
-};
-
 struct Canvas {
 	struct Image img, drw;
 	double scale;
 	struct Rect r;
-	struct ImageGRData grImg, grDrw;
-	struct ImageShaderData sh;
+	unsigned int imgTex, drwTex;
+	struct ImgShader sh;
 	unsigned int vao;
 };
 
@@ -61,12 +57,7 @@ sampleImg(struct Image i, int x, int y, struct ColorRGBA *out);
 static inline void
 mouseJustUp(struct Canvas *canvas);
 
-#define WIN_TITLE "pie"
-
-#define WIDTH 800
-#define HEIGHT 800
-
-#define UI_CANVAS_SIZE HEIGHT
+#define UI_CANVAS_SIZE WINH
 
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
@@ -180,71 +171,6 @@ grImageGenTexture(struct Image img, unsigned int *out)
 		     img.data);
 }
 
-static unsigned int
-grCompileShader(int type, const char *src)
-{
-	unsigned int out = glCreateShader(type);
-	glShaderSource(out, 1, &src, 0);
-	glCompileShader(out);
-
-	int success;
-	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetShaderInfoLog(out, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	return out;
-}
-
-static inline unsigned int
-grCanvasGenShader(void)
-{
-	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, imgVertSrc);
-	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, canvasFragSrc);
-
-	unsigned int shader = glCreateProgram();
-
-	glAttachShader(shader, shv);
-	glAttachShader(shader, shf);
-
-	glLinkProgram(shader);
-
-	int success;
-	glGetProgramiv(shader, GL_LINK_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetProgramInfoLog(shader, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	glUseProgram(shader);
-
-	glDeleteShader(shv);
-	glDeleteShader(shf);
-
-	return shader;
-}
-
-static inline void
-grCanvasInitGr(struct Canvas *canvas)
-{
-	canvas->vao = grImgGenVAO();
-
-	grImageGenTexture(canvas->img, &canvas->grImg.tex);
-	grImageGenTexture(canvas->img, &canvas->grDrw.tex);
-	canvas->sh.id = grCanvasGenShader();
-	canvas->sh.uTr = glGetUniformLocation(canvas->sh.id, "uTr");
-	canvas->sh.uWin = glGetUniformLocation(canvas->sh.id, "uWin");
-
-	const struct Rect r = canvas->r;
-	glUniform4f(canvas->sh.uTr, r.pos.x, r.pos.y, r.size.x, r.size.y);
-	glUniform2f(canvas->sh.uWin, WIDTH, HEIGHT);
-}
-
 static inline void
 grImageUpdate(struct Image img)
 {
@@ -257,34 +183,6 @@ grImageUpdate(struct Image img)
 			GL_RGBA,
 			GL_UNSIGNED_BYTE,
 			img.data);
-}
-
-static inline bool
-grInit(struct pie *pie, GLFWwindow **window)
-{
-	if (!glfwInit())
-		return false;
-
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
-
-	if (window == NULL)
-		return false;
-
-	glfwMakeContextCurrent(*window);
-	glfwSetWindowUserPointer(*window, pie);
-
-	glfwSetMouseButtonCallback(*window, inMouseCallback);
-	glfwSetKeyCallback(*window, inKeyboardCallback);
-
-	glfwSwapInterval(0);
-
-	glewInit();
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	return true;
 }
 
 static inline void
@@ -524,7 +422,7 @@ mouseDown(struct pie *pie,
 				 pie->brushSize / 2,
 				 (struct Vec2i){(int)rs.x, (int)rs.y},
 				 (struct Vec2i){(int)re.x, (int)re.y});
-		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.drwTex);
 		grImageUpdate(pie->canvas.drw);
 	}
 }
@@ -540,7 +438,7 @@ mouseJustUp(struct Canvas *canvas)
 		canvas->drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
 	}
 
-	glBindTexture(GL_TEXTURE_2D, canvas->grImg.tex);
+	glBindTexture(GL_TEXTURE_2D, canvas->imgTex);
 	grImageUpdate(canvas->img);
 }
 
@@ -675,12 +573,12 @@ run(struct pie *pie, GLFWwindow *window)
 			pie->color.a);
 
 		glClear(GL_COLOR_BUFFER_BIT);
-		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.imgTex);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 		if (pie->m0Down)
 		{
-			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
+			glBindTexture(GL_TEXTURE_2D, pie->canvas.drwTex);
 			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 		}
 
@@ -698,8 +596,8 @@ quit(struct pie *pie)
 	fputc('\n', stderr);
 	if (pie->useStdout)
 		ffwrite(stdout, pie->canvas.img);
-	glDeleteTextures(1, &pie->canvas.grImg.tex);
-	glDeleteTextures(1, &pie->canvas.grDrw.tex);
+	glDeleteTextures(1, &pie->canvas.imgTex);
+	glDeleteTextures(1, &pie->canvas.drwTex);
 	glDeleteVertexArrays(1, &pie->canvas.vao);
 	glDeleteProgram(pie->canvas.sh.id);
 	glfwTerminate();
@@ -720,11 +618,14 @@ main(int argc, char **argv)
 	loadInputFile(&pie);
 
 	GLFWwindow *window;
-	if (!grInit(&pie, &window))
+	if (!grInit(&pie, &window, inMouseCallback, inKeyboardCallback))
 		return EXIT_FAILURE;
 
 	canvasAlign(&pie.canvas);
-	grCanvasInitGr(&pie.canvas);
+	pie.canvas.vao = grImgGenVAO();
+	grImageGenTexture(pie.canvas.img, &pie.canvas.imgTex);
+	grImageGenTexture(pie.canvas.img, &pie.canvas.drwTex);
+	grImgInitGr(&pie.canvas.sh, pie.canvas.r, WINW, WINH, canvasFragSrc);
 
 	run(&pie, window);
 	quit(&pie);

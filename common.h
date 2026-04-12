@@ -21,6 +21,10 @@ struct Rect {
 	struct Vec2f pos, size;
 };
 
+struct ImgShader {
+	unsigned int id, uWin, uTr;
+};
+
 static const char *imgVertSrc =
 	"#version 330 core\n"
 	"layout (location = 0) in vec2 aPos;"
@@ -77,4 +81,97 @@ grImgGenVAO(void)
 	glEnableVertexAttribArray(0);
 
 	return vao;
+}
+
+static unsigned int
+grCompileShader(int type, const char *src)
+{
+	unsigned int out = glCreateShader(type);
+	glShaderSource(out, 1, &src, 0);
+	glCompileShader(out);
+
+	int success;
+	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		char infolog[512];
+		glGetShaderInfoLog(out, 512, 0, infolog);
+		fprintf(stderr, "%s\n", infolog);
+	}
+
+	return out;
+}
+
+static unsigned int
+grGenShader(const char *vertSrc, const char *fragSrc)
+{
+	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, vertSrc);
+	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, fragSrc);
+
+	unsigned int shader = glCreateProgram();
+
+	glAttachShader(shader, shv);
+	glAttachShader(shader, shf);
+
+	glLinkProgram(shader);
+
+	int success;
+	glGetProgramiv(shader, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		char infolog[512];
+		glGetProgramInfoLog(shader, 512, 0, infolog);
+		fprintf(stderr, "%s\n", infolog);
+	}
+
+	glUseProgram(shader);
+
+	glDeleteShader(shv);
+	glDeleteShader(shf);
+
+	return shader;
+}
+
+static inline void
+grImgInitGr(struct ImgShader *sh,
+	    struct Rect r,
+	    double winW,
+	    double winH,
+	    const char *fragSrc)
+{
+	sh->id = grGenShader(imgVertSrc, fragSrc);
+	sh->uTr = glGetUniformLocation(sh->id, "uTr");
+	sh->uWin = glGetUniformLocation(sh->id, "uWin");
+	glUniform4f(sh->uTr, r.pos.x, r.pos.y, r.size.x, r.size.y);
+	glUniform2f(sh->uWin, winW, winH);
+}
+
+static inline bool
+grInit(void *data,
+       GLFWwindow **window,
+       GLFWmousebuttonfun mouse,
+       GLFWkeyfun key)
+{
+	if (!glfwInit())
+		return false;
+
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	*window = glfwCreateWindow(WINW, WINH, WIN_TITLE, NULL, NULL);
+
+	if (window == NULL)
+		return false;
+
+	glfwMakeContextCurrent(*window);
+	glfwSetWindowUserPointer(*window, data);
+	glfwSetMouseButtonCallback(*window, mouse);
+	glfwSetKeyCallback(*window, key);
+
+	glfwSwapInterval(0);
+
+	glewInit();
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	return true;
 }

@@ -6,16 +6,16 @@
 #include <math.h>
 #include <stdlib.h>
 
+#define WIN_TITLE "pcp"
+#define WINW 300
+#define WINH 332
+
 #include "common.h"
 
 enum SelectionType { SEL_NONE, SEL_HSV_WHEEL, SEL_VAL_BAR };
 
 struct ColorHSV {
 	double h, s, v;
-};
-
-struct ImgShader {
-	unsigned int id, uWin, uTr;
 };
 
 struct HSVWheel {
@@ -58,7 +58,6 @@ static const char *hsvWheelFragSrc =
 	"}";
 
 static const char *valBarFragSrc = "#version 330 core\n"
-				   "#define PI 3.14159265358979\n"
 				   "in vec2 texCoord;"
 				   "out vec4 FragColor;"
 				   "void main() {"
@@ -66,11 +65,6 @@ static const char *valBarFragSrc = "#version 330 core\n"
 				   "}";
 
 #define PI 3.14159265358979
-
-#define WIN_TITLE "pcp"
-
-#define WIDTH 300
-#define HEIGHT 332
 
 #define UI_VAL_HEIGHT 32
 
@@ -122,10 +116,7 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 		return;
 	}
 	if (BOUNDS(m, pcp->valBar.r))
-	{
 		pcp->selection = SEL_VAL_BAR;
-		return;
-	}
 }
 
 static void
@@ -136,108 +127,6 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	struct pcp *pcp = glfwGetWindowUserPointer(window);
 	if (key == KEY_CONFIRM && action != GLFW_RELEASE)
 		pcp->quit = true;
-}
-
-static unsigned int
-grCompileShader(int type, const char *src)
-{
-	unsigned int out = glCreateShader(type);
-	glShaderSource(out, 1, &src, 0);
-	glCompileShader(out);
-
-	int success;
-	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetShaderInfoLog(out, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	return out;
-}
-
-static unsigned int
-grGenShader(const char *vertSrc, const char *fragSrc)
-{
-	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, vertSrc);
-	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, fragSrc);
-
-	unsigned int shader = glCreateProgram();
-
-	glAttachShader(shader, shv);
-	glAttachShader(shader, shf);
-
-	glLinkProgram(shader);
-
-	int success;
-	glGetProgramiv(shader, GL_LINK_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetProgramInfoLog(shader, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	glUseProgram(shader);
-
-	glDeleteShader(shv);
-	glDeleteShader(shf);
-
-	return shader;
-}
-
-static void
-grGenImgShader(struct ImgShader *sh, const char *vertSrc, const char *fragSrc)
-{
-	sh->id = grGenShader(vertSrc, fragSrc);
-	sh->uTr = glGetUniformLocation(sh->id, "uTr");
-	sh->uWin = glGetUniformLocation(sh->id, "uWin");
-}
-
-static inline void
-grHSVWheelInitGr(struct HSVWheel *w)
-{
-	grGenImgShader(&w->sh, imgVertSrc, hsvWheelFragSrc);
-	glUniform4f(
-		w->sh.uTr, w->r.pos.x, w->r.pos.y, w->r.size.x, w->r.size.y);
-	glUniform2f(w->sh.uWin, WIDTH, HEIGHT);
-}
-
-static inline void
-grValBarInitGr(struct ValueBar *v)
-{
-	grGenImgShader(&v->sh, imgVertSrc, valBarFragSrc);
-	glUniform4f(
-		v->sh.uTr, v->r.pos.x, v->r.pos.y, v->r.size.x, v->r.size.y);
-	glUniform2f(v->sh.uWin, WIDTH, HEIGHT);
-}
-
-static inline bool
-grInit(struct pcp *pcp, GLFWwindow **window)
-{
-	glfwInit();
-
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
-
-	if (window == NULL)
-		return false;
-
-	glfwMakeContextCurrent(*window);
-	glfwSetWindowUserPointer(*window, pcp);
-
-	glfwSetMouseButtonCallback(*window, inMouseCallback);
-	glfwSetKeyCallback(*window, inKeyboardCallback);
-
-	glfwSwapInterval(0);
-
-	glewInit();
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	return true;
 }
 
 static void
@@ -321,18 +210,19 @@ main(void)
 	struct pcp pcp = {0};
 
 	GLFWwindow *window;
-	if (!grInit(&pcp, &window))
+	if (!grInit(&pcp, &window, inMouseCallback, inKeyboardCallback))
 		return EXIT_FAILURE;
 
 	unsigned int vao = grImgGenVAO();
 
-	pcp.hsvWheel.r.size = (struct Vec2f){WIDTH, WIDTH};
-	pcp.hsvWheel.pos = (struct Vec2f){WIDTH / 2., WIDTH / 2.};
-	grHSVWheelInitGr(&pcp.hsvWheel);
-	pcp.valBar.r.pos = (struct Vec2f){0, HEIGHT - UI_VAL_HEIGHT};
-	pcp.valBar.r.size = (struct Vec2f){WIDTH, UI_VAL_HEIGHT};
+	pcp.hsvWheel.r.size = (struct Vec2f){WINW, WINW};
+	pcp.hsvWheel.pos = (struct Vec2f){WINW / 2., WINW / 2.};
+	grImgInitGr(
+		&pcp.hsvWheel.sh, pcp.hsvWheel.r, WINW, WINH, hsvWheelFragSrc);
+	pcp.valBar.r.pos = (struct Vec2f){0, WINH - UI_VAL_HEIGHT};
+	pcp.valBar.r.size = (struct Vec2f){WINW, UI_VAL_HEIGHT};
 	pcp.color.a = 0xff;
-	grValBarInitGr(&pcp.valBar);
+	grImgInitGr(&pcp.valBar.sh, pcp.valBar.r, WINW, WINH, valBarFragSrc);
 
 	while (!glfwWindowShouldClose(window) && !pcp.quit)
 	{
@@ -347,11 +237,11 @@ main(void)
 
 		glUseProgram(0);
 		glColor3ub(0, 0, 0);
-		grDrawMark(pcp.hsvWheel.pos, (struct Vec2f){WIDTH, HEIGHT});
+		grDrawMark(pcp.hsvWheel.pos, (struct Vec2f){WINW, WINH});
 		glColor3ub(0xff, 0, 0);
-		struct Vec2f markPos = {pcp.valBar.v * WIDTH,
-					HEIGHT - UI_VAL_HEIGHT / 2.};
-		grDrawMark(markPos, (struct Vec2f){WIDTH, HEIGHT});
+		struct Vec2f markPos = {pcp.valBar.v * WINW,
+					WINH - UI_VAL_HEIGHT / 2.};
+		grDrawMark(markPos, (struct Vec2f){WINW, WINH});
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

@@ -9,14 +9,8 @@
 #include <unistd.h>
 
 #define WIN_TITLE "pie"
-#define WINW 800
-#define WINH 800
 
 #include "common.h"
-
-struct Vec2i {
-	int x, y;
-};
 
 struct Image {
 	struct ColorRGBA *data;
@@ -38,6 +32,7 @@ struct pie {
 	struct ColorRGBA color;
 	double brushSize;
 	struct Vec2f m, lastM;
+	struct Vec2i win;
 };
 
 static const char *canvasFragSrc = "#version 330 core\n"
@@ -60,16 +55,8 @@ static const char *bgFragSrc = "#version 330 core\n"
 			       "FragColor = vec4(c,c,c,1);"
 			       "}";
 
-static void
-askColor(struct ColorRGBA *out);
-
-static inline void
-sampleImg(struct Image i, int x, int y, struct ColorRGBA *out);
-
-static inline void
-mouseJustUp(struct Canvas *canvas);
-
-#define UI_CANVAS_SIZE WINH
+#define UI_CANVAS_W 1
+#define UI_CANVAS_H 1
 
 static const char *colorPickCmd[] = {"pcp", NULL};
 
@@ -115,48 +102,6 @@ mtScreen2Canvas(struct Vec2f mp, struct Canvas *c)
 }
 
 static void
-inMouseCallback(GLFWwindow *window, int mb, int action, int mod)
-{
-	(void)mod;
-	struct pie *pie = glfwGetWindowUserPointer(window);
-
-	glfwMakeContextCurrent(window);
-
-	pie->m0Down = mb == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS;
-	pie->m1Down = mb == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS;
-	if (action == GLFW_PRESS && mb == GLFW_MOUSE_BUTTON_LEFT)
-		return;
-
-	mouseJustUp(&pie->canvas);
-}
-
-static void
-inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
-{
-	(void)scan, (void)mod;
-
-	glfwMakeContextCurrent(window);
-	struct pie *pie = glfwGetWindowUserPointer(window);
-	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
-		askColor(&pie->color);
-	if (key == KEY_SAMPLE && action != GLFW_RELEASE)
-	{
-		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
-		sampleImg(pie->canvas.img, (int)rs.x, (int)rs.y, &pie->color);
-	}
-	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
-		pie->brushSize--;
-	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
-		pie->brushSize++;
-	if (key == KEY_QUIT_NOSAVE && action != GLFW_RELEASE &&
-	    mod == GLFW_MOD_SHIFT)
-	{
-		pie->useStdout = false;
-		pie->quit = true;
-	}
-}
-
-static void
 grImageGenTexture(struct Image img, unsigned int *out)
 {
 	glGenTextures(1, out);
@@ -193,15 +138,17 @@ grImageUpdate(struct Image img)
 }
 
 static inline void
-canvasAlign(struct Canvas *canvas)
+canvasAlign(struct Canvas *canvas, struct Vec2i win)
 {
-	double s = mtScaleFitIn(
-		canvas->img.w, canvas->img.h, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
+	double s = mtScaleFitIn(canvas->img.w,
+				canvas->img.h,
+				UI_CANVAS_W * win.x,
+				UI_CANVAS_H * win.y);
 	canvas->scale = s;
 	canvas->r.size.x = canvas->img.w * s;
 	canvas->r.size.y = canvas->img.h * s;
-	canvas->r.pos.x = (UI_CANVAS_SIZE - canvas->img.w * s) / 2.;
-	canvas->r.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
+	canvas->r.pos.x = (UI_CANVAS_W * win.x - canvas->img.w * s) / 2.;
+	canvas->r.pos.y = (UI_CANVAS_H * win.y - canvas->img.h * s) / 2.;
 }
 
 static void
@@ -567,6 +514,61 @@ sampleImg(struct Image i, int x, int y, struct ColorRGBA *out)
 		*out = i.data[x + y * i.w];
 }
 
+static void
+cbMouse(GLFWwindow *window, int mb, int action, int mod)
+{
+	(void)mod;
+	struct pie *pie = glfwGetWindowUserPointer(window);
+
+	glfwMakeContextCurrent(window);
+
+	pie->m0Down = mb == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS;
+	pie->m1Down = mb == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS;
+	if (action == GLFW_PRESS && mb == GLFW_MOUSE_BUTTON_LEFT)
+		return;
+
+	mouseJustUp(&pie->canvas);
+}
+
+static void
+cbKeyboard(GLFWwindow *window, int key, int scan, int action, int mod)
+{
+	(void)scan, (void)mod;
+
+	glfwMakeContextCurrent(window);
+	struct pie *pie = glfwGetWindowUserPointer(window);
+	if (key == KEY_COLOR_PALETTE && action == GLFW_RELEASE)
+		askColor(&pie->color);
+	if (key == KEY_SAMPLE && action != GLFW_RELEASE)
+	{
+		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
+		sampleImg(pie->canvas.img, (int)rs.x, (int)rs.y, &pie->color);
+	}
+	if (key == KEY_BRUSH_DEC_SIZE && action != GLFW_RELEASE)
+		pie->brushSize--;
+	if (key == KEY_BRUSH_INC_SIZE && action != GLFW_RELEASE)
+		pie->brushSize++;
+	if (key == KEY_QUIT_NOSAVE && action != GLFW_RELEASE &&
+	    mod == GLFW_MOD_SHIFT)
+	{
+		pie->useStdout = false;
+		pie->quit = true;
+	}
+}
+
+static void
+cbWinSize(struct GLFWwindow *window, int w, int h)
+{
+	struct pie *pie = glfwGetWindowUserPointer(window);
+	pie->win = (struct Vec2i){w, h};
+	glViewport(0, 0, w, h);
+	canvasAlign(&pie->canvas, pie->win);
+	glUseProgram(pie->canvas.sh.id);
+	grImgUpdate(&pie->canvas.sh, pie->canvas.r, w, h);
+	glUseProgram(pie->canvas.bgSh.id);
+	grImgUpdate(&pie->canvas.bgSh, pie->canvas.r, w, h);
+}
+
 static inline void
 run(struct pie *pie, GLFWwindow *window)
 {
@@ -623,6 +625,7 @@ quit(struct pie *pie)
 	glDeleteTextures(1, &pie->canvas.drwTex);
 	glDeleteVertexArrays(1, &pie->canvas.vao);
 	glDeleteProgram(pie->canvas.sh.id);
+	glDeleteProgram(pie->canvas.bgSh.id);
 	glfwTerminate();
 	free(pie->canvas.img.data);
 	free(pie->canvas.drw.data);
@@ -632,6 +635,7 @@ int
 main(int argc, char **argv)
 {
 	struct pie pie = {0};
+	pie.win = (struct Vec2i){800, 800};
 	pie.canvas.img = (struct Image){0, 50, 50};
 	pie.canvas.drw = (struct Image){0, 50, 50};
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
@@ -641,15 +645,14 @@ main(int argc, char **argv)
 	loadInputFile(&pie);
 
 	GLFWwindow *window;
-	if (!grInit(&pie, &window, inMouseCallback, inKeyboardCallback))
+	if (!grInit(&pie, &window, pie.win, 1, cbMouse, cbKeyboard, cbWinSize))
 		return EXIT_FAILURE;
 
-	canvasAlign(&pie.canvas);
+	canvasAlign(&pie.canvas, pie.win);
 	pie.canvas.vao = grImgGenVAO();
 	grImageGenTexture(pie.canvas.img, &pie.canvas.imgTex);
 	grImageGenTexture(pie.canvas.img, &pie.canvas.drwTex);
-	grImgInitGr(&pie.canvas.sh, pie.canvas.r, WINW, WINH, canvasFragSrc);
-	grImgInitGr(&pie.canvas.bgSh, pie.canvas.r, WINW, WINH, bgFragSrc);
+	cbWinSize(window, pie.win.x, pie.win.y);
 
 	run(&pie, window);
 	quit(&pie);

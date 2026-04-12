@@ -57,7 +57,6 @@ use `piec` to communicate with pie
 - proper api for fifo / uds
 # pie
 - draw straight line when shift is pressed
-- eraser
 - fill tool
 # pcp
 - alpha slider

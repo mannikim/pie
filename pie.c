@@ -220,19 +220,19 @@ ffwrite(FILE *f, struct Image img)
 {
 	fputs("farbfeld", f);
 	uint32_t x = htonl((uint32_t)img.w);
-	fwrite(&x, sizeof(x), 1, f);
+	fwrite(&x, sizeof x, 1, f);
 	x = htonl((uint32_t)img.h);
-	fwrite(&x, sizeof(x), 1, f);
+	fwrite(&x, sizeof x, 1, f);
 	for (int i = 0; i < img.w * img.h; i++)
 	{
 		uint16_t y = img.data[i].r * 257;
-		fwrite(&y, sizeof(uint16_t), 1, f);
+		fwrite(&y, sizeof y, 1, f);
 		y = img.data[i].g * 257;
-		fwrite(&y, sizeof(uint16_t), 1, f);
+		fwrite(&y, sizeof y, 1, f);
 		y = img.data[i].b * 257;
-		fwrite(&y, sizeof(uint16_t), 1, f);
+		fwrite(&y, sizeof y, 1, f);
 		y = img.data[i].a * 257;
-		fwrite(&y, sizeof(uint16_t), 1, f);
+		fwrite(&y, sizeof y, 1, f);
 	}
 }
 
@@ -240,7 +240,7 @@ static void
 ffread(FILE *f, struct Canvas *canvas)
 {
 	uint32_t header[4];
-	fread(header, sizeof(header), 1, f);
+	fread(header, sizeof header, 1, f);
 	if (header[0] != 0x62726166 && header[1] != 0x646c6566)
 	{
 		fprintf(stderr, "failed to parse farbfeld magic value\n");
@@ -250,14 +250,14 @@ ffread(FILE *f, struct Canvas *canvas)
 	canvas->img.w = (signed)ntohl(header[2]);
 	canvas->img.h = (signed)ntohl(header[3]);
 	size_t pixels = (size_t)(canvas->img.w * canvas->img.h);
-	canvas->img.data = malloc(pixels * sizeof(struct ColorRGBA));
+	canvas->img.data = malloc(pixels * sizeof *canvas->img.data);
 	if (canvas->img.data == NULL)
 	{
 		perror("malloc failed");
 		exit(EXIT_FAILURE);
 	}
 
-	canvas->drw.data = calloc(1, sizeof(*canvas->drw.data) * pixels);
+	canvas->drw.data = calloc(1, sizeof *canvas->drw.data * pixels);
 	if (canvas->drw.data == NULL)
 	{
 		free(canvas->img.data);
@@ -269,13 +269,13 @@ ffread(FILE *f, struct Canvas *canvas)
 	{
 		struct ColorRGBA c;
 		uint16_t x;
-		fread(&x, sizeof(x), 1, f);
+		fread(&x, sizeof x, 1, f);
 		c.r = x / 257;
-		fread(&x, sizeof(x), 1, f);
+		fread(&x, sizeof x, 1, f);
 		c.g = x / 257;
-		fread(&x, sizeof(x), 1, f);
+		fread(&x, sizeof x, 1, f);
 		c.b = x / 257;
-		fread(&x, sizeof(x), 1, f);
+		fread(&x, sizeof x, 1, f);
 		c.a = x / 257;
 		canvas->img.data[i] = c;
 	}
@@ -288,14 +288,14 @@ static void
 newBlankCanvas(struct Canvas *canvas)
 {
 	unsigned int pixels = (unsigned int)(canvas->img.h * canvas->img.w);
-	canvas->img.data = calloc(1, pixels * sizeof(*canvas->img.data));
+	canvas->img.data = calloc(1, pixels * sizeof *canvas->img.data);
 	if (canvas->img.data == NULL)
 	{
 		perror("Failed to create blank image");
 		exit(EXIT_FAILURE);
 	}
 
-	canvas->drw.data = calloc(1, pixels * sizeof(*canvas->drw.data));
+	canvas->drw.data = calloc(1, pixels * sizeof *canvas->drw.data);
 	if (canvas->drw.data == NULL)
 	{
 		free(canvas->img.data);
@@ -461,7 +461,7 @@ askColor(struct ColorRGBA *out)
 	close(fd[1]);
 
 	char buffer[9] = {0};
-	if (read(fd[0], buffer, sizeof(buffer) - 1) != sizeof(buffer) - 1)
+	if (read(fd[0], buffer, sizeof buffer - 1) != sizeof buffer - 1)
 	{
 		close(fd[0]);
 		fprintf(stderr, "\r\033[KFailed to read from color picker\n");

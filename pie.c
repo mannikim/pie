@@ -46,10 +46,12 @@ static const char *canvasFragSrc = "#version 330 core\n"
 static const char *bgFragSrc = "#version 330 core\n"
 			       "in vec2 texCoord;"
 			       "out vec4 FragColor;"
+			       "uniform sampler2D tex;"
 			       "void main() {"
 			       "float c = 0.05;"
-			       "float x = texCoord.x * 8 + texCoord.y * 8;"
-			       "if (mod(x,2.f) < 1) {"
+			       "ivec2 s = textureSize(tex, 0);"
+			       "if (mod(texCoord.x * s.x / 8,2.f) < 1 ^^ "
+			       "mod(texCoord.y * s.y / 8,2.f) < 1) {"
 			       "c = 0.1f;"
 			       "}"
 			       "FragColor = vec4(c,c,c,1);"
@@ -603,8 +605,8 @@ main(int argc, char **argv)
 {
 	struct pie pie = {0};
 	pie.win = (struct Vec2i){800, 800};
-	pie.canvas.img = (struct Image){0, 50, 50};
-	pie.canvas.drw = (struct Image){0, 50, 50};
+	pie.canvas.img = (struct Image){0, 32, 32};
+	pie.canvas.drw = (struct Image){0, 32, 32};
 	pie.color = (struct ColorRGBA){0xff, 0, 0, 0xff};
 	pie.brushSize = 1;
 

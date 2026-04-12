@@ -652,6 +652,8 @@ main(int argc, char **argv)
 	pie.canvas.vao = grImgGenVAO();
 	grImageGenTexture(pie.canvas.img, &pie.canvas.imgTex);
 	grImageGenTexture(pie.canvas.img, &pie.canvas.drwTex);
+	grImgInitGr(&pie.canvas.sh, canvasFragSrc);
+	grImgInitGr(&pie.canvas.bgSh, bgFragSrc);
 	cbWinSize(window, pie.win.x, pie.win.y);
 
 	run(&pie, window);

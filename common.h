@@ -9,8 +9,6 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#define ALWAYS_INLINE __attribute__((always_inline)) inline static
-
 struct ColorRGBA {
 	unsigned char r, g, b, a;
 };
@@ -19,8 +17,12 @@ struct Vec2f {
 	double x, y;
 };
 
-struct Transform {
+struct Rect {
 	struct Vec2f pos, size;
+};
+
+struct ImgShader {
+	unsigned int id, uWin, uTr;
 };
 
 static const char *imgVertSrc =
@@ -37,31 +39,22 @@ static const char *imgVertSrc =
 	"texCoord = vec2(gl_VertexID & 1, (gl_VertexID & 0x2) >> 1);"
 	"}";
 
-ALWAYS_INLINE bool
-mtBoundsZero(double x0, double y0, double x1, double y1)
-{
-	return x0 > 0 && x0 < x1 && y0 > 0 && y0 < y1;
-}
+/* Vec2 p, Rect r */
+#define BOUNDS(p, r) \
+	(p.x > r.pos.x && p.x < r.pos.x + r.size.x && p.y > r.pos.y && \
+	 p.y < r.pos.y + r.size.y)
 
-ALWAYS_INLINE bool
-mtBounds(struct Vec2f p, struct Transform tr)
-{
-	return p.x > tr.pos.x && p.x < tr.pos.x + tr.size.x &&
-	       p.y > tr.pos.y && p.y < tr.pos.y + tr.size.y;
-}
+#define BOUNDS_ZERO(x0, y0, x1, y1) \
+	((x0) > 0 && (x0) < (x1) && (y0) > 0 && (y0) < (y1))
 
-ALWAYS_INLINE double
-mtClampd(double x, double min, double max)
-{
-	return x > max ? max : (x < min ? min : x);
-}
+#define CLAMP(x, min, max) ((x) > (max) ? (max) : ((x) < (min) ? (min) : (x)))
 
-ALWAYS_INLINE struct Vec2f
-mtTransfromRel(struct Vec2f pos, struct Transform tr)
-{
-	return (struct Vec2f){(pos.x - tr.pos.x) / tr.size.x,
-			      (pos.y - tr.pos.y) / tr.size.y};
-}
+/* Vec2 p, Rect r */
+#define RECT_UV(p, r) \
+	(struct Vec2f) \
+	{ \
+		(p.x - r.pos.x) / r.size.x, (p.y - r.pos.y) / r.size.y \
+	}
 
 static unsigned int
 grImgGenVAO(void)
@@ -88,4 +81,97 @@ grImgGenVAO(void)
 	glEnableVertexAttribArray(0);
 
 	return vao;
+}
+
+static unsigned int
+grCompileShader(int type, const char *src)
+{
+	unsigned int out = glCreateShader(type);
+	glShaderSource(out, 1, &src, 0);
+	glCompileShader(out);
+
+	int success;
+	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
+	if (!success)
+	{
+		char infolog[512];
+		glGetShaderInfoLog(out, 512, 0, infolog);
+		fprintf(stderr, "%s\n", infolog);
+	}
+
+	return out;
+}
+
+static unsigned int
+grGenShader(const char *vertSrc, const char *fragSrc)
+{
+	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, vertSrc);
+	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, fragSrc);
+
+	unsigned int shader = glCreateProgram();
+
+	glAttachShader(shader, shv);
+	glAttachShader(shader, shf);
+
+	glLinkProgram(shader);
+
+	int success;
+	glGetProgramiv(shader, GL_LINK_STATUS, &success);
+	if (!success)
+	{
+		char infolog[512];
+		glGetProgramInfoLog(shader, 512, 0, infolog);
+		fprintf(stderr, "%s\n", infolog);
+	}
+
+	glUseProgram(shader);
+
+	glDeleteShader(shv);
+	glDeleteShader(shf);
+
+	return shader;
+}
+
+static inline void
+grImgInitGr(struct ImgShader *sh,
+	    struct Rect r,
+	    double winW,
+	    double winH,
+	    const char *fragSrc)
+{
+	sh->id = grGenShader(imgVertSrc, fragSrc);
+	sh->uTr = glGetUniformLocation(sh->id, "uTr");
+	sh->uWin = glGetUniformLocation(sh->id, "uWin");
+	glUniform4f(sh->uTr, r.pos.x, r.pos.y, r.size.x, r.size.y);
+	glUniform2f(sh->uWin, winW, winH);
+}
+
+static inline bool
+grInit(void *data,
+       GLFWwindow **window,
+       GLFWmousebuttonfun mouse,
+       GLFWkeyfun key)
+{
+	if (!glfwInit())
+		return false;
+
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	*window = glfwCreateWindow(WINW, WINH, WIN_TITLE, NULL, NULL);
+
+	if (window == NULL)
+		return false;
+
+	glfwMakeContextCurrent(*window);
+	glfwSetWindowUserPointer(*window, data);
+	glfwSetMouseButtonCallback(*window, mouse);
+	glfwSetKeyCallback(*window, key);
+
+	glfwSwapInterval(0);
+
+	glewInit();
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	return true;
 }

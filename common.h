@@ -9,8 +9,6 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#define ALWAYS_INLINE __attribute__((always_inline)) inline static
-
 struct ColorRGBA {
 	unsigned char r, g, b, a;
 };
@@ -19,7 +17,7 @@ struct Vec2f {
 	double x, y;
 };
 
-struct Transform {
+struct Rect {
 	struct Vec2f pos, size;
 };
 
@@ -37,31 +35,22 @@ static const char *imgVertSrc =
 	"texCoord = vec2(gl_VertexID & 1, (gl_VertexID & 0x2) >> 1);"
 	"}";
 
-ALWAYS_INLINE bool
-mtBoundsZero(double x0, double y0, double x1, double y1)
-{
-	return x0 > 0 && x0 < x1 && y0 > 0 && y0 < y1;
-}
+/* Vec2 p, Rect r */
+#define BOUNDS(p, r) \
+	(p.x > r.pos.x && p.x < r.pos.x + r.size.x && p.y > r.pos.y && \
+	 p.y < r.pos.y + r.size.y)
 
-ALWAYS_INLINE bool
-mtBounds(struct Vec2f p, struct Transform tr)
-{
-	return p.x > tr.pos.x && p.x < tr.pos.x + tr.size.x &&
-	       p.y > tr.pos.y && p.y < tr.pos.y + tr.size.y;
-}
+#define BOUNDS_ZERO(x0, y0, x1, y1) \
+	((x0) > 0 && (x0) < (x1) && (y0) > 0 && (y0) < (y1))
 
-ALWAYS_INLINE double
-mtClampd(double x, double min, double max)
-{
-	return x > max ? max : (x < min ? min : x);
-}
+#define CLAMP(x, min, max) ((x) > (max) ? (max) : ((x) < (min) ? (min) : (x)))
 
-ALWAYS_INLINE struct Vec2f
-mtTransfromRel(struct Vec2f pos, struct Transform tr)
-{
-	return (struct Vec2f){(pos.x - tr.pos.x) / tr.size.x,
-			      (pos.y - tr.pos.y) / tr.size.y};
-}
+/* Vec2 p, Rect r */
+#define RECT_UV(p, r) \
+	(struct Vec2f) \
+	{ \
+		(p.x - r.pos.x) / r.size.x, (p.y - r.pos.y) / r.size.y \
+	}
 
 static unsigned int
 grImgGenVAO(void)

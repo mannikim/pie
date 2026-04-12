@@ -30,7 +30,7 @@ struct ImageShaderData {
 struct Canvas {
 	struct Image img, drw;
 	double scale;
-	struct Transform tr;
+	struct Rect r;
 	struct ImageGRData grImg, grDrw;
 	struct ImageShaderData sh;
 	unsigned int vao;
@@ -55,10 +55,10 @@ static const char *canvasFragSrc = "#version 330 core\n"
 static void
 askColor(struct ColorRGBA *out);
 
-ALWAYS_INLINE void
+static inline void
 sampleImg(struct Image i, int x, int y, struct ColorRGBA *out);
 
-ALWAYS_INLINE void
+static inline void
 mouseJustUp(struct Canvas *canvas);
 
 #define WIN_TITLE "pie"
@@ -79,7 +79,10 @@ static const char *colorPickCmd[] = {"pcp", NULL};
 #define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
 #define KEY_SAMPLE GLFW_KEY_S
 
-ALWAYS_INLINE double
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+inline double
 mtScaleFitIn(double w0, double h0, double w1, double h1)
 {
 	double r0 = w1 / w0;
@@ -87,19 +90,7 @@ mtScaleFitIn(double w0, double h0, double w1, double h1)
 	return r0 < r1 ? r0 : r1;
 }
 
-ALWAYS_INLINE int
-mtMax(int a, int b)
-{
-	return a > b ? a : b;
-}
-
-ALWAYS_INLINE int
-mtMin(int a, int b)
-{
-	return a < b ? a : b;
-}
-
-ALWAYS_INLINE struct ColorRGBA
+static inline struct ColorRGBA
 mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 {
 	double aa = (double)a.a / 255.0;
@@ -116,17 +107,11 @@ mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 	return out;
 }
 
-ALWAYS_INLINE double
-mtStepCount(struct Vec2i d, double w, double h)
-{
-	return d.x > d.y ? d.x / w : d.y / h;
-}
-
-ALWAYS_INLINE struct Vec2f
+static inline struct Vec2f
 mtScreen2Canvas(struct Vec2f mp, struct Canvas *c)
 {
-	return (struct Vec2f){(mp.x - c->tr.pos.x) / c->scale,
-			      (mp.y - c->tr.pos.y) / c->scale};
+	return (struct Vec2f){(mp.x - c->r.pos.x) / c->scale,
+			      (mp.y - c->r.pos.y) / c->scale};
 }
 
 static void
@@ -173,7 +158,7 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	}
 }
 
-ALWAYS_INLINE void
+static void
 grImageGenTexture(struct Image img, unsigned int *out)
 {
 	glGenTextures(1, out);
@@ -195,7 +180,7 @@ grImageGenTexture(struct Image img, unsigned int *out)
 		     img.data);
 }
 
-inline static unsigned int
+static unsigned int
 grCompileShader(int type, const char *src)
 {
 	unsigned int out = glCreateShader(type);
@@ -214,7 +199,7 @@ grCompileShader(int type, const char *src)
 	return out;
 }
 
-inline static unsigned int
+static inline unsigned int
 grCanvasGenShader(void)
 {
 	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, imgVertSrc);
@@ -244,13 +229,7 @@ grCanvasGenShader(void)
 	return shader;
 }
 
-ALWAYS_INLINE void
-grDrawImage(void)
-{
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-}
-
-ALWAYS_INLINE void
+static inline void
 grCanvasInitGr(struct Canvas *canvas)
 {
 	canvas->vao = grImgGenVAO();
@@ -261,12 +240,12 @@ grCanvasInitGr(struct Canvas *canvas)
 	canvas->sh.uTr = glGetUniformLocation(canvas->sh.id, "uTr");
 	canvas->sh.uWin = glGetUniformLocation(canvas->sh.id, "uWin");
 
-	const struct Transform tr = canvas->tr;
-	glUniform4f(canvas->sh.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
+	const struct Rect r = canvas->r;
+	glUniform4f(canvas->sh.uTr, r.pos.x, r.pos.y, r.size.x, r.size.y);
 	glUniform2f(canvas->sh.uWin, WIDTH, HEIGHT);
 }
 
-ALWAYS_INLINE void
+static inline void
 grImageUpdate(struct Image img)
 {
 	glTexSubImage2D(GL_TEXTURE_2D,
@@ -280,7 +259,7 @@ grImageUpdate(struct Image img)
 			img.data);
 }
 
-ALWAYS_INLINE bool
+static inline bool
 grInit(struct pie *pie, GLFWwindow **window)
 {
 	if (!glfwInit())
@@ -308,16 +287,16 @@ grInit(struct pie *pie, GLFWwindow **window)
 	return true;
 }
 
-inline static void
+static inline void
 canvasAlign(struct Canvas *canvas)
 {
 	double s = mtScaleFitIn(
 		canvas->img.w, canvas->img.h, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
 	canvas->scale = s;
-	canvas->tr.size.x = canvas->img.w * s;
-	canvas->tr.size.y = canvas->img.h * s;
-	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->img.w * s) / 2.;
-	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
+	canvas->r.size.x = canvas->img.w * s;
+	canvas->r.size.y = canvas->img.h * s;
+	canvas->r.pos.x = (UI_CANVAS_SIZE - canvas->img.w * s) / 2.;
+	canvas->r.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
 }
 
 static void
@@ -499,16 +478,19 @@ strokeSizePencil(struct Image read,
 {
 	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2i absd = {abs(d.x), abs(d.y)};
-	double count = absd.x > absd.y ? absd.x : absd.y;
+	double count = MAX(absd.x, absd.y);
 	struct Vec2f step = {d.x / count, d.y / count};
 	struct Vec2f cur = {v0.x, v0.y};
 
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
-		int x = mtMax((int)(size - cur.x), 0);
-		int w = mtMin((int)(size - cur.x) + read.w, (int)(size * 2));
-		int y = mtMax((int)(size - cur.y), 0);
-		int h = mtMin((int)(size - cur.y) + read.h, (int)(size * 2));
+		double maxSize = size * 2;
+		double sx = size - cur.x;
+		int x = (int)MAX(sx, 0);
+		int w = (int)MIN(sx + read.w, maxSize);
+		double sy = size - cur.y;
+		int y = (int)MAX(sy, 0);
+		int h = (int)MIN(sy + read.w, maxSize);
 
 		for (int j = y; j < h; j++)
 			for (int k = x; k < w; k++)
@@ -524,18 +506,18 @@ strokeSizePencil(struct Image read,
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 mouseDown(struct pie *pie,
 	  struct Image buffer,
 	  struct Vec2f start,
 	  struct Vec2f end)
 {
 	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
-	if (mtBoundsZero(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
+	if (BOUNDS_ZERO(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
 	{
 		struct Vec2f re = mtScreen2Canvas(end, &pie->canvas);
-		re.x = mtClampd(re.x, 0, pie->canvas.img.w - 1);
-		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
+		re.x = CLAMP(re.x, 0, pie->canvas.img.w - 1);
+		re.y = CLAMP(re.y, 0, pie->canvas.img.h - 1);
 		strokeSizePencil(pie->canvas.img,
 				 buffer,
 				 pie->color,
@@ -547,7 +529,7 @@ mouseDown(struct pie *pie,
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 mouseJustUp(struct Canvas *canvas)
 {
 	for (size_t i = 0; i < (size_t)(canvas->drw.w * canvas->drw.h); i++)
@@ -662,14 +644,14 @@ askColor(struct ColorRGBA *out)
 	close(fd[0]);
 }
 
-ALWAYS_INLINE void
+static inline void
 sampleImg(struct Image i, int x, int y, struct ColorRGBA *out)
 {
-	if (mtBoundsZero(x, y, i.w, i.h))
+	if (BOUNDS_ZERO(x, y, i.w, i.h))
 		*out = i.data[x + y * i.w];
 }
 
-ALWAYS_INLINE void
+static inline void
 run(struct pie *pie, GLFWwindow *window)
 {
 	glfwGetCursorPos(window, &pie->m.x, &pie->m.y);
@@ -694,12 +676,12 @@ run(struct pie *pie, GLFWwindow *window)
 
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
-		grDrawImage();
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 		if (pie->m0Down)
 		{
 			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
-			grDrawImage();
+			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 		}
 
 		glfwSwapBuffers(window);
@@ -710,7 +692,7 @@ run(struct pie *pie, GLFWwindow *window)
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 quit(struct pie *pie)
 {
 	fputc('\n', stderr);

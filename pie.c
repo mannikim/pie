@@ -28,12 +28,12 @@ struct Canvas {
 	double scale;
 	struct Rect r;
 	unsigned int imgTex, drwTex;
-	struct ImgShader sh;
+	struct ImgShader sh, bgSh;
 	unsigned int vao;
 };
 
 struct pie {
-	bool useStdin, useStdout, quit, m0Down;
+	bool useStdin, useStdout, quit, m0Down, m1Down;
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
@@ -48,6 +48,18 @@ static const char *canvasFragSrc = "#version 330 core\n"
 				   "FragColor = texture(tex, texCoord);"
 				   "}";
 
+static const char *bgFragSrc = "#version 330 core\n"
+			       "in vec2 texCoord;"
+			       "out vec4 FragColor;"
+			       "void main() {"
+			       "float c = 0.05;"
+			       "float x = texCoord.x * 8 + texCoord.y * 8;"
+			       "if (mod(x,2.f) < 1) {"
+			       "c = 0.1f;"
+			       "}"
+			       "FragColor = vec4(c,c,c,1);"
+			       "}";
+
 static void
 askColor(struct ColorRGBA *out);
 
@@ -58,9 +70,6 @@ static inline void
 mouseJustUp(struct Canvas *canvas);
 
 #define UI_CANVAS_SIZE WINH
-
-/* color used to fill a new blank canvas */
-#define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
 
 static const char *colorPickCmd[] = {"pcp", NULL};
 
@@ -106,18 +115,16 @@ mtScreen2Canvas(struct Vec2f mp, struct Canvas *c)
 }
 
 static void
-inMouseCallback(GLFWwindow *window, int button, int action, int mod)
+inMouseCallback(GLFWwindow *window, int mb, int action, int mod)
 {
 	(void)mod;
 	struct pie *pie = glfwGetWindowUserPointer(window);
 
 	glfwMakeContextCurrent(window);
 
-	if (button != GLFW_MOUSE_BUTTON_LEFT)
-		return;
-
-	pie->m0Down = action == GLFW_PRESS;
-	if (action == GLFW_PRESS)
+	pie->m0Down = mb == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS;
+	pie->m1Down = mb == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS;
+	if (action == GLFW_PRESS && mb == GLFW_MOUSE_BUTTON_LEFT)
 		return;
 
 	mouseJustUp(&pie->canvas);
@@ -333,25 +340,19 @@ static void
 newBlankCanvas(struct Canvas *canvas)
 {
 	unsigned int pixels = (unsigned int)(canvas->img.h * canvas->img.w);
-	canvas->img.data = malloc(pixels * sizeof(*canvas->img.data));
+	canvas->img.data = calloc(1, pixels * sizeof(*canvas->img.data));
 	if (canvas->img.data == NULL)
 	{
 		perror("Failed to create blank image");
 		exit(EXIT_FAILURE);
 	}
 
-	canvas->drw.data = malloc(pixels * sizeof(*canvas->drw.data));
+	canvas->drw.data = calloc(1, pixels * sizeof(*canvas->drw.data));
 	if (canvas->drw.data == NULL)
 	{
 		free(canvas->img.data);
 		perror("Failed to create blank image");
 		exit(EXIT_FAILURE);
-	}
-
-	for (unsigned int i = 0; i < pixels; i++)
-	{
-		canvas->img.data[i] = BG_COLOR;
-		canvas->drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
 	}
 }
 
@@ -405,10 +406,7 @@ strokeSizePencil(struct Image read,
 }
 
 static inline void
-mouseDown(struct pie *pie,
-	  struct Image buffer,
-	  struct Vec2f start,
-	  struct Vec2f end)
+mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
 {
 	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
 	if (BOUNDS_ZERO(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
@@ -417,13 +415,33 @@ mouseDown(struct pie *pie,
 		re.x = CLAMP(re.x, 0, pie->canvas.img.w - 1);
 		re.y = CLAMP(re.y, 0, pie->canvas.img.h - 1);
 		strokeSizePencil(pie->canvas.img,
-				 buffer,
+				 pie->canvas.drw,
 				 pie->color,
 				 pie->brushSize / 2,
 				 (struct Vec2i){(int)rs.x, (int)rs.y},
 				 (struct Vec2i){(int)re.x, (int)re.y});
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.drwTex);
 		grImageUpdate(pie->canvas.drw);
+	}
+}
+
+static inline void
+mouse2Down(struct pie *pie, struct Vec2f start, struct Vec2f end)
+{
+	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
+	if (BOUNDS_ZERO(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
+	{
+		struct Vec2f re = mtScreen2Canvas(end, &pie->canvas);
+		re.x = CLAMP(re.x, 0, pie->canvas.img.w - 1);
+		re.y = CLAMP(re.y, 0, pie->canvas.img.h - 1);
+		strokeSizePencil(pie->canvas.img,
+				 pie->canvas.img,
+				 (struct ColorRGBA){0, 0, 0, 0},
+				 pie->brushSize / 2,
+				 (struct Vec2i){(int)rs.x, (int)rs.y},
+				 (struct Vec2i){(int)re.x, (int)re.y});
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.imgTex);
+		grImageUpdate(pie->canvas.img);
 	}
 }
 
@@ -573,6 +591,9 @@ run(struct pie *pie, GLFWwindow *window)
 			pie->color.a);
 
 		glClear(GL_COLOR_BUFFER_BIT);
+		glUseProgram(pie->canvas.bgSh.id);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+		glUseProgram(pie->canvas.sh.id);
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.imgTex);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
@@ -586,7 +607,9 @@ run(struct pie *pie, GLFWwindow *window)
 		glfwPollEvents();
 
 		if (pie->m0Down)
-			mouseDown(pie, pie->canvas.drw, pie->lastM, pie->m);
+			mouseDown(pie, pie->lastM, pie->m);
+		if (pie->m1Down)
+			mouse2Down(pie, pie->lastM, pie->m);
 	}
 }
 
@@ -626,6 +649,7 @@ main(int argc, char **argv)
 	grImageGenTexture(pie.canvas.img, &pie.canvas.imgTex);
 	grImageGenTexture(pie.canvas.img, &pie.canvas.drwTex);
 	grImgInitGr(&pie.canvas.sh, pie.canvas.r, WINW, WINH, canvasFragSrc);
+	grImgInitGr(&pie.canvas.bgSh, pie.canvas.r, WINW, WINH, bgFragSrc);
 
 	run(&pie, window);
 	quit(&pie);

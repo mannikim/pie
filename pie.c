@@ -10,6 +10,10 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#define WIN_TITLE "pie"
+#define WINW 800
+#define WINH 800
+
 #include "common.h"
 
 struct Vec2i {
@@ -21,20 +25,12 @@ struct Image {
 	int w, h;
 };
 
-struct ImageGRData {
-	unsigned int tex;
-};
-
-struct ImageShaderData {
-	unsigned int id, uTr, uWin;
-};
-
 struct Canvas {
 	struct Image img, drw;
 	double scale;
-	struct Transform tr;
-	struct ImageGRData grImg, grDrw;
-	struct ImageShaderData sh;
+	struct Rect r;
+	unsigned int imgTex, drwTex;
+	struct ImgShader sh;
 	unsigned int vao;
 };
 
@@ -58,18 +54,13 @@ static const char *canvasFragSrc = "#version 330 core\n"
 static void
 runCmd(const char **cmd);
 
-ALWAYS_INLINE void
+static inline void
 sampleImg(struct Image i, int x, int y, struct ColorRGBA *out);
 
-ALWAYS_INLINE void
+static inline void
 mouseJustUp(struct Canvas *canvas);
 
-#define WIN_TITLE "pie"
-
-#define WIDTH 800
-#define HEIGHT 800
-
-#define UI_CANVAS_SIZE HEIGHT
+#define UI_CANVAS_SIZE WINH
 
 /* color used to fill a new blank canvas */
 #define BG_COLOR (struct ColorRGBA){0xff, 0xff, 0xff, 0xff}
@@ -82,7 +73,10 @@ static const char *colorPickCmd[] = {"pie-cp", NULL};
 #define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
 #define KEY_SAMPLE GLFW_KEY_S
 
-ALWAYS_INLINE double
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+inline double
 mtScaleFitIn(double w0, double h0, double w1, double h1)
 {
 	double r0 = w1 / w0;
@@ -90,19 +84,7 @@ mtScaleFitIn(double w0, double h0, double w1, double h1)
 	return r0 < r1 ? r0 : r1;
 }
 
-ALWAYS_INLINE int
-mtMax(int a, int b)
-{
-	return a > b ? a : b;
-}
-
-ALWAYS_INLINE int
-mtMin(int a, int b)
-{
-	return a < b ? a : b;
-}
-
-ALWAYS_INLINE struct ColorRGBA
+static inline struct ColorRGBA
 mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 {
 	double aa = (double)a.a / 255.0;
@@ -119,17 +101,11 @@ mtBlend(struct ColorRGBA a, struct ColorRGBA b)
 	return out;
 }
 
-ALWAYS_INLINE double
-mtStepCount(struct Vec2i d, double w, double h)
-{
-	return d.x > d.y ? d.x / w : d.y / h;
-}
-
-ALWAYS_INLINE struct Vec2f
+static inline struct Vec2f
 mtScreen2Canvas(struct Vec2f mp, struct Canvas *c)
 {
-	return (struct Vec2f){(mp.x - c->tr.pos.x) / c->scale,
-			      (mp.y - c->tr.pos.y) / c->scale};
+	return (struct Vec2f){(mp.x - c->r.pos.x) / c->scale,
+			      (mp.y - c->r.pos.y) / c->scale};
 }
 
 static void
@@ -176,7 +152,7 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	}
 }
 
-ALWAYS_INLINE void
+static void
 grImageGenTexture(struct Image img, unsigned int *out)
 {
 	glGenTextures(1, out);
@@ -198,78 +174,7 @@ grImageGenTexture(struct Image img, unsigned int *out)
 		     img.data);
 }
 
-inline static unsigned int
-grCompileShader(int type, const char *src)
-{
-	unsigned int out = glCreateShader(type);
-	glShaderSource(out, 1, &src, 0);
-	glCompileShader(out);
-
-	int success;
-	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetShaderInfoLog(out, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	return out;
-}
-
-inline static unsigned int
-grCanvasGenShader(void)
-{
-	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, imgVertSrc);
-	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, canvasFragSrc);
-
-	unsigned int shader = glCreateProgram();
-
-	glAttachShader(shader, shv);
-	glAttachShader(shader, shf);
-
-	glLinkProgram(shader);
-
-	int success;
-	glGetProgramiv(shader, GL_LINK_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetProgramInfoLog(shader, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	glUseProgram(shader);
-
-	glDeleteShader(shv);
-	glDeleteShader(shf);
-
-	return shader;
-}
-
-ALWAYS_INLINE void
-grDrawImage(void)
-{
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-}
-
-ALWAYS_INLINE void
-grCanvasInitGr(struct Canvas *canvas)
-{
-	canvas->vao = grImgGenVAO();
-
-	grImageGenTexture(canvas->img, &canvas->grImg.tex);
-	grImageGenTexture(canvas->img, &canvas->grDrw.tex);
-	canvas->sh.id = grCanvasGenShader();
-	canvas->sh.uTr = glGetUniformLocation(canvas->sh.id, "uTr");
-	canvas->sh.uWin = glGetUniformLocation(canvas->sh.id, "uWin");
-
-	const struct Transform tr = canvas->tr;
-	glUniform4f(canvas->sh.uTr, tr.pos.x, tr.pos.y, tr.size.x, tr.size.y);
-	glUniform2f(canvas->sh.uWin, WIDTH, HEIGHT);
-}
-
-ALWAYS_INLINE void
+static inline void
 grImageUpdate(struct Image img)
 {
 	glTexSubImage2D(GL_TEXTURE_2D,
@@ -283,44 +188,16 @@ grImageUpdate(struct Image img)
 			img.data);
 }
 
-ALWAYS_INLINE bool
-grInit(struct pie *pie, GLFWwindow **window)
-{
-	if (!glfwInit())
-		return false;
-
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
-
-	if (window == NULL)
-		return false;
-
-	glfwMakeContextCurrent(*window);
-	glfwSetWindowUserPointer(*window, pie);
-
-	glfwSetMouseButtonCallback(*window, inMouseCallback);
-	glfwSetKeyCallback(*window, inKeyboardCallback);
-
-	glfwSwapInterval(0);
-
-	glewInit();
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	return true;
-}
-
-inline static void
+static inline void
 canvasAlign(struct Canvas *canvas)
 {
 	double s = mtScaleFitIn(
 		canvas->img.w, canvas->img.h, UI_CANVAS_SIZE, UI_CANVAS_SIZE);
 	canvas->scale = s;
-	canvas->tr.size.x = canvas->img.w * s;
-	canvas->tr.size.y = canvas->img.h * s;
-	canvas->tr.pos.x = (UI_CANVAS_SIZE - canvas->img.w * s) / 2.;
-	canvas->tr.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
+	canvas->r.size.x = canvas->img.w * s;
+	canvas->r.size.y = canvas->img.h * s;
+	canvas->r.pos.x = (UI_CANVAS_SIZE - canvas->img.w * s) / 2.;
+	canvas->r.pos.y = (UI_CANVAS_SIZE - canvas->img.h * s) / 2.;
 }
 
 static void
@@ -502,16 +379,19 @@ strokeSizePencil(struct Image read,
 {
 	struct Vec2i d = {v1.x - v0.x, v1.y - v0.y};
 	struct Vec2i absd = {abs(d.x), abs(d.y)};
-	double count = absd.x > absd.y ? absd.x : absd.y;
+	double count = MAX(absd.x, absd.y);
 	struct Vec2f step = {d.x / count, d.y / count};
 	struct Vec2f cur = {v0.x, v0.y};
 
 	for (size_t i = 0; i < (size_t)(count + 1); i++)
 	{
-		int x = mtMax((int)(size - cur.x), 0);
-		int w = mtMin((int)(size - cur.x) + read.w, (int)(size * 2));
-		int y = mtMax((int)(size - cur.y), 0);
-		int h = mtMin((int)(size - cur.y) + read.h, (int)(size * 2));
+		double maxSize = size * 2;
+		double sx = size - cur.x;
+		int x = (int)MAX(sx, 0);
+		int w = (int)MIN(sx + read.w, maxSize);
+		double sy = size - cur.y;
+		int y = (int)MAX(sy, 0);
+		int h = (int)MIN(sy + read.w, maxSize);
 
 		for (int j = y; j < h; j++)
 			for (int k = x; k < w; k++)
@@ -527,30 +407,30 @@ strokeSizePencil(struct Image read,
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 mouseDown(struct pie *pie,
 	  struct Image buffer,
 	  struct Vec2f start,
 	  struct Vec2f end)
 {
 	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
-	if (mtBoundsZero(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
+	if (BOUNDS_ZERO(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
 	{
 		struct Vec2f re = mtScreen2Canvas(end, &pie->canvas);
-		re.x = mtClampd(re.x, 0, pie->canvas.img.w - 1);
-		re.y = mtClampd(re.y, 0, pie->canvas.img.h - 1);
+		re.x = CLAMP(re.x, 0, pie->canvas.img.w - 1);
+		re.y = CLAMP(re.y, 0, pie->canvas.img.h - 1);
 		strokeSizePencil(pie->canvas.img,
 				 buffer,
 				 pie->color,
 				 pie->brushSize / 2,
 				 (struct Vec2i){(int)rs.x, (int)rs.y},
 				 (struct Vec2i){(int)re.x, (int)re.y});
-		glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.drwTex);
 		grImageUpdate(pie->canvas.drw);
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 mouseJustUp(struct Canvas *canvas)
 {
 	for (size_t i = 0; i < (size_t)(canvas->drw.w * canvas->drw.h); i++)
@@ -561,7 +441,7 @@ mouseJustUp(struct Canvas *canvas)
 		canvas->drw.data[i] = (struct ColorRGBA){0, 0, 0, 0};
 	}
 
-	glBindTexture(GL_TEXTURE_2D, canvas->grImg.tex);
+	glBindTexture(GL_TEXTURE_2D, canvas->imgTex);
 	grImageUpdate(canvas->img);
 }
 
@@ -633,7 +513,7 @@ runCmd(const char **cmd)
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 setupFifo(int *outFd)
 {
 	int fd = open("/tmp/pie.fifo", O_RDWR | O_NONBLOCK);
@@ -645,7 +525,7 @@ setupFifo(int *outFd)
 	*outFd = fd;
 }
 
-ALWAYS_INLINE void
+static inline void
 runFifoCmd(struct pie *pie, const char *cmd)
 {
 	if (strncmp(cmd, "setcolor ", 9) == 0)
@@ -666,7 +546,7 @@ runFifoCmd(struct pie *pie, const char *cmd)
 	fprintf(stderr, "\r\033[KFailed to parse command \"%s\"\n", cmd);
 }
 
-ALWAYS_INLINE void
+static inline void
 pollFifo(struct pie *pie, fd_set *rfds)
 {
 	FD_ZERO(rfds);
@@ -697,14 +577,14 @@ pollFifo(struct pie *pie, fd_set *rfds)
 	runFifoCmd(pie, buffer);
 }
 
-ALWAYS_INLINE void
+static inline void
 sampleImg(struct Image i, int x, int y, struct ColorRGBA *out)
 {
-	if (mtBoundsZero(x, y, i.w, i.h))
+	if (BOUNDS_ZERO(x, y, i.w, i.h))
 		*out = i.data[x + y * i.w];
 }
 
-ALWAYS_INLINE void
+static inline void
 run(struct pie *pie, GLFWwindow *window)
 {
 	glfwGetCursorPos(window, &pie->m.x, &pie->m.y);
@@ -729,13 +609,13 @@ run(struct pie *pie, GLFWwindow *window)
 			pie->color.a);
 
 		glClear(GL_COLOR_BUFFER_BIT);
-		glBindTexture(GL_TEXTURE_2D, pie->canvas.grImg.tex);
-		grDrawImage();
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.imgTex);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 		if (pie->m0Down)
 		{
-			glBindTexture(GL_TEXTURE_2D, pie->canvas.grDrw.tex);
-			grDrawImage();
+			glBindTexture(GL_TEXTURE_2D, pie->canvas.drwTex);
+			glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 		}
 
 		glfwSwapBuffers(window);
@@ -747,14 +627,14 @@ run(struct pie *pie, GLFWwindow *window)
 	}
 }
 
-ALWAYS_INLINE void
+static inline void
 quit(struct pie *pie)
 {
 	fputc('\n', stderr);
 	if (pie->useStdout)
 		ffwrite(stdout, pie->canvas.img);
-	glDeleteTextures(1, &pie->canvas.grImg.tex);
-	glDeleteTextures(1, &pie->canvas.grDrw.tex);
+	glDeleteTextures(1, &pie->canvas.imgTex);
+	glDeleteTextures(1, &pie->canvas.drwTex);
 	glDeleteVertexArrays(1, &pie->canvas.vao);
 	glDeleteProgram(pie->canvas.sh.id);
 	glfwTerminate();
@@ -777,11 +657,14 @@ main(int argc, char **argv)
 	setupFifo(&pie.fifofd);
 
 	GLFWwindow *window;
-	if (!grInit(&pie, &window))
+	if (!grInit(&pie, &window, inMouseCallback, inKeyboardCallback))
 		return EXIT_FAILURE;
 
 	canvasAlign(&pie.canvas);
-	grCanvasInitGr(&pie.canvas);
+	pie.canvas.vao = grImgGenVAO();
+	grImageGenTexture(pie.canvas.img, &pie.canvas.imgTex);
+	grImageGenTexture(pie.canvas.img, &pie.canvas.drwTex);
+	grImgInitGr(&pie.canvas.sh, pie.canvas.r, WINW, WINH, canvasFragSrc);
 
 	run(&pie, window);
 	quit(&pie);

@@ -6,6 +6,10 @@
 #include <math.h>
 #include <stdlib.h>
 
+#define WIN_TITLE "pcp"
+#define WINW 300
+#define WINH 332
+
 #include "common.h"
 
 enum SelectionType { SEL_NONE, SEL_HSV_WHEEL, SEL_VAL_BAR };
@@ -14,20 +18,16 @@ struct ColorHSV {
 	double h, s, v;
 };
 
-struct ImgShader {
-	unsigned int id, uWin, uTr;
-};
-
 struct HSVWheel {
 	struct ImgShader sh;
-	struct Transform tr;
+	struct Rect r;
 	struct Vec2f pos;
 	struct ColorHSV c;
 };
 
 struct ValueBar {
 	struct ImgShader sh;
-	struct Transform tr;
+	struct Rect r;
 	double v;
 };
 
@@ -58,7 +58,6 @@ static const char *hsvWheelFragSrc =
 	"}";
 
 static const char *valBarFragSrc = "#version 330 core\n"
-				   "#define PI 3.14159265358979\n"
 				   "in vec2 texCoord;"
 				   "out vec4 FragColor;"
 				   "void main() {"
@@ -67,46 +66,28 @@ static const char *valBarFragSrc = "#version 330 core\n"
 
 #define PI 3.14159265358979
 
-#define WIN_TITLE "pcp"
-
-#define WIDTH 300
-#define HEIGHT 332
-
 #define UI_VAL_HEIGHT 32
 
 #define KEY_CONFIRM GLFW_KEY_Q
 
-ALWAYS_INLINE double
-mtFrac(double x)
-{
-	return x - (double)(int64_t)x;
-}
+#define FRAC(x) ((x) - (double)(int64_t)(x))
+#define LERP(x, y, a) ((x) + ((y) - (x)) * (a))
+/* Vec2 p, Rect r */
+#define RECT_INVUV(p, r) \
+	(struct Vec2f) { p.x *r.size.x + r.pos.x, p.y *r.size.y + r.pos.y }
 
-ALWAYS_INLINE double
-mtLerp(double x, double y, double a)
-{
-	return x + (y - x) * a;
-}
-
-ALWAYS_INLINE struct Vec2f
-mtTransfromInvRel(struct Vec2f pos, struct Transform tr)
-{
-	return (struct Vec2f){pos.x * tr.size.x + tr.pos.x,
-			      pos.y * tr.size.y + tr.pos.y};
-}
-
-ALWAYS_INLINE struct ColorRGBA
+static inline struct ColorRGBA
 mtHSV2RGBA(struct ColorHSV c)
 {
-	double px = fabs(mtFrac(c.h + 1) * 6 - 3);
-	double py = fabs(mtFrac(c.h + 2 / 3.) * 6 - 3);
-	double pz = fabs(mtFrac(c.h + 1 / 3.) * 6 - 3);
-	double pcx = mtClampd(px - 1, 0, 1);
-	double pcy = mtClampd(py - 1, 0, 1);
-	double pcz = mtClampd(pz - 1, 0, 1);
-	uint8_t r = (uint8_t)(mtLerp(1, pcx, c.s) * c.v * 0xff);
-	uint8_t g = (uint8_t)(mtLerp(1, pcy, c.s) * c.v * 0xff);
-	uint8_t b = (uint8_t)(mtLerp(1, pcz, c.s) * c.v * 0xff);
+	double px = fabs(FRAC(c.h + 1) * 6 - 3);
+	double py = fabs(FRAC(c.h + 2 / 3.) * 6 - 3);
+	double pz = fabs(FRAC(c.h + 1 / 3.) * 6 - 3);
+	double pcx = CLAMP(px - 1, 0, 1);
+	double pcy = CLAMP(py - 1, 0, 1);
+	double pcz = CLAMP(pz - 1, 0, 1);
+	uint8_t r = (uint8_t)(LERP(1, pcx, c.s) * c.v * 0xff);
+	uint8_t g = (uint8_t)(LERP(1, pcy, c.s) * c.v * 0xff);
+	uint8_t b = (uint8_t)(LERP(1, pcz, c.s) * c.v * 0xff);
 	return (struct ColorRGBA){r, g, b, 0xff};
 }
 
@@ -129,16 +110,13 @@ inMouseCallback(GLFWwindow *window, int button, int action, int mod)
 
 	struct Vec2f m;
 	glfwGetCursorPos(window, &m.x, &m.y);
-	if (mtBounds(m, pcp->hsvWheel.tr))
+	if (BOUNDS(m, pcp->hsvWheel.r))
 	{
 		pcp->selection = SEL_HSV_WHEEL;
 		return;
 	}
-	if (mtBounds(m, pcp->valBar.tr))
-	{
+	if (BOUNDS(m, pcp->valBar.r))
 		pcp->selection = SEL_VAL_BAR;
-		return;
-	}
 }
 
 static void
@@ -149,114 +127,6 @@ inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
 	struct pcp *pcp = glfwGetWindowUserPointer(window);
 	if (key == KEY_CONFIRM && action != GLFW_RELEASE)
 		pcp->quit = true;
-}
-
-inline static unsigned int
-grCompileShader(int type, const char *src)
-{
-	unsigned int out = glCreateShader(type);
-	glShaderSource(out, 1, &src, 0);
-	glCompileShader(out);
-
-	int success;
-	glGetShaderiv(out, GL_COMPILE_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetShaderInfoLog(out, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	return out;
-}
-
-inline static unsigned int
-grGenShader(const char *vertSrc, const char *fragSrc)
-{
-	unsigned int shv = grCompileShader(GL_VERTEX_SHADER, vertSrc);
-	unsigned int shf = grCompileShader(GL_FRAGMENT_SHADER, fragSrc);
-
-	unsigned int shader = glCreateProgram();
-
-	glAttachShader(shader, shv);
-	glAttachShader(shader, shf);
-
-	glLinkProgram(shader);
-
-	int success;
-	glGetProgramiv(shader, GL_LINK_STATUS, &success);
-	if (!success)
-	{
-		char infolog[512];
-		glGetProgramInfoLog(shader, 512, 0, infolog);
-		fprintf(stderr, "%s\n", infolog);
-	}
-
-	glUseProgram(shader);
-
-	glDeleteShader(shv);
-	glDeleteShader(shf);
-
-	return shader;
-}
-
-static inline void
-grGenImgShader(struct ImgShader *sh, const char *vertSrc, const char *fragSrc)
-{
-	sh->id = grGenShader(vertSrc, fragSrc);
-	sh->uTr = glGetUniformLocation(sh->id, "uTr");
-	sh->uWin = glGetUniformLocation(sh->id, "uWin");
-}
-
-ALWAYS_INLINE void
-grHSVWheelInitGr(struct HSVWheel *w)
-{
-	grGenImgShader(&w->sh, imgVertSrc, hsvWheelFragSrc);
-	glUniform4f(w->sh.uTr,
-		    w->tr.pos.x,
-		    w->tr.pos.y,
-		    w->tr.size.x,
-		    w->tr.size.y);
-	glUniform2f(w->sh.uWin, WIDTH, HEIGHT);
-}
-
-ALWAYS_INLINE void
-grValBarInitGr(struct ValueBar *v)
-{
-	grGenImgShader(&v->sh, imgVertSrc, valBarFragSrc);
-	glUniform4f(v->sh.uTr,
-		    v->tr.pos.x,
-		    v->tr.pos.y,
-		    v->tr.size.x,
-		    v->tr.size.y);
-	glUniform2f(v->sh.uWin, WIDTH, HEIGHT);
-}
-
-ALWAYS_INLINE bool
-grInit(struct pcp *pcp, GLFWwindow **window)
-{
-	glfwInit();
-
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	*window = glfwCreateWindow(WIDTH, HEIGHT, WIN_TITLE, NULL, NULL);
-
-	if (window == NULL)
-		return false;
-
-	glfwMakeContextCurrent(*window);
-	glfwSetWindowUserPointer(*window, pcp);
-
-	glfwSetMouseButtonCallback(*window, inMouseCallback);
-	glfwSetKeyCallback(*window, inKeyboardCallback);
-
-	glfwSwapInterval(0);
-
-	glewInit();
-
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	return true;
 }
 
 static void
@@ -287,11 +157,12 @@ static struct ColorHSV
 HSVWheelAt(struct Vec2f pos)
 {
 	double h = atan2(pos.y, -pos.x) / PI / 2;
-	double s = mtClampd(sqrt(pow(pos.x, 2) + pow(pos.y, 2)) * 2, 0, 1);
+	double len = sqrt(pow(pos.x, 2) + pow(pos.y, 2)) * 2;
+	double s = CLAMP(len, 0, 1);
 	return (struct ColorHSV){h, s, 1};
 }
 
-ALWAYS_INLINE void
+static inline void
 mouseDown(struct pcp *pcp, GLFWwindow *window)
 {
 	struct Vec2f m;
@@ -300,7 +171,7 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 	{
 	case SEL_HSV_WHEEL:
 	{
-		struct Vec2f hsvRel = mtTransfromRel(m, pcp->hsvWheel.tr);
+		struct Vec2f hsvRel = RECT_UV(m, pcp->hsvWheel.r);
 		hsvRel.x -= .5;
 		hsvRel.y -= .5;
 		double d = sqrt(pow(hsvRel.x, 2) + pow(hsvRel.y, 2)) * 2;
@@ -312,18 +183,16 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 		pcp->hsvWheel.c = HSVWheelAt(hsvRel);
 		hsvRel.x += .5;
 		hsvRel.y += .5;
-		pcp->hsvWheel.pos =
-			mtTransfromInvRel(hsvRel, pcp->hsvWheel.tr);
+		pcp->hsvWheel.pos = RECT_INVUV(hsvRel, pcp->hsvWheel.r);
 		break;
 	}
 	case SEL_VAL_BAR:
 	{
-		double x =
-			mtClampd(m.x,
-				 pcp->valBar.tr.pos.x,
-				 pcp->valBar.tr.size.x + pcp->valBar.tr.pos.x);
+		double x = CLAMP(m.x,
+				 pcp->valBar.r.pos.x,
+				 pcp->valBar.r.size.x + pcp->valBar.r.pos.x);
 		pcp->valBar.v =
-			(x - pcp->valBar.tr.pos.x) / pcp->valBar.tr.size.x;
+			(x - pcp->valBar.r.pos.x) / pcp->valBar.r.size.x;
 		break;
 	}
 	default:
@@ -341,18 +210,19 @@ main(void)
 	struct pcp pcp = {0};
 
 	GLFWwindow *window;
-	if (!grInit(&pcp, &window))
+	if (!grInit(&pcp, &window, inMouseCallback, inKeyboardCallback))
 		return EXIT_FAILURE;
 
 	unsigned int vao = grImgGenVAO();
 
-	pcp.hsvWheel.tr.size = (struct Vec2f){WIDTH, WIDTH};
-	pcp.hsvWheel.pos = (struct Vec2f){WIDTH / 2., WIDTH / 2.};
-	grHSVWheelInitGr(&pcp.hsvWheel);
-	pcp.valBar.tr.pos = (struct Vec2f){0, HEIGHT - UI_VAL_HEIGHT};
-	pcp.valBar.tr.size = (struct Vec2f){WIDTH, UI_VAL_HEIGHT};
+	pcp.hsvWheel.r.size = (struct Vec2f){WINW, WINW};
+	pcp.hsvWheel.pos = (struct Vec2f){WINW / 2., WINW / 2.};
+	grImgInitGr(
+		&pcp.hsvWheel.sh, pcp.hsvWheel.r, WINW, WINH, hsvWheelFragSrc);
+	pcp.valBar.r.pos = (struct Vec2f){0, WINH - UI_VAL_HEIGHT};
+	pcp.valBar.r.size = (struct Vec2f){WINW, UI_VAL_HEIGHT};
 	pcp.color.a = 0xff;
-	grValBarInitGr(&pcp.valBar);
+	grImgInitGr(&pcp.valBar.sh, pcp.valBar.r, WINW, WINH, valBarFragSrc);
 
 	while (!glfwWindowShouldClose(window) && !pcp.quit)
 	{
@@ -367,11 +237,11 @@ main(void)
 
 		glUseProgram(0);
 		glColor3ub(0, 0, 0);
-		grDrawMark(pcp.hsvWheel.pos, (struct Vec2f){WIDTH, HEIGHT});
+		grDrawMark(pcp.hsvWheel.pos, (struct Vec2f){WINW, WINH});
 		glColor3ub(0xff, 0, 0);
-		struct Vec2f markPos = {pcp.valBar.v * WIDTH,
-					HEIGHT - UI_VAL_HEIGHT / 2.};
-		grDrawMark(markPos, (struct Vec2f){WIDTH, HEIGHT});
+		struct Vec2f markPos = {pcp.valBar.v * WINW,
+					WINH - UI_VAL_HEIGHT / 2.};
+		grDrawMark(markPos, (struct Vec2f){WINW, WINH});
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

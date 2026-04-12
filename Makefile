@@ -25,6 +25,6 @@ uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/pcp
 
 clean:
-	rm -f pie
+	rm -f pie pcp
 
 .PHONY: all clean install uninstall

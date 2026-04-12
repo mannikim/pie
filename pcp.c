@@ -150,9 +150,8 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 	}
 	case SEL_VAL_BAR:
 	{
-		double x = CLAMP(m.x,
-				 pcp->valBar.r.pos.x,
-				 pcp->valBar.r.size.x + pcp->valBar.r.pos.x);
+		struct Rect r = pcp->valBar.r;
+		double x = CLAMP(m.x, r.pos.x, r.size.x + r.pos.x);
 		pcp->valBar.v =
 			(x - pcp->valBar.r.pos.x) / pcp->valBar.r.size.x;
 		break;
@@ -210,13 +209,8 @@ main(void)
 	struct pcp pcp = {0};
 
 	GLFWwindow *window;
-	if (!grInit(&pcp,
-		    &window,
-		    (struct Vec2i){WINW, WINH},
-		    false,
-		    cbMouse,
-		    cbKeyboard,
-		    NULL))
+	struct Vec2i win = {WINW, WINH};
+	if (!grInit(&pcp, &window, win, false, cbMouse, cbKeyboard, NULL))
 		return EXIT_FAILURE;
 
 	unsigned int vao = grImgGenVAO();

@@ -342,9 +342,9 @@ strokeSizePencil(struct Image read,
 		for (int j = y; j < h; j++)
 			for (int k = x; k < w; k++)
 			{
-				struct Vec2i fp = {k + (int)cur.x - (int)size,
-						   j + (int)cur.y - (int)size};
-				size_t id = (size_t)(fp.x + fp.y * read.w);
+				int px = k + (int)cur.x - (int)size;
+				int py = j + (int)cur.y - (int)size;
+				size_t id = (size_t)(px + py * read.w);
 				write.data[id] = color;
 			}
 

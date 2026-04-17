@@ -79,6 +79,7 @@ static const char *colorPickCmd[] = {"pcp", NULL};
 #define KEY_SAMPLE GLFW_KEY_S
 #define KEY_AREA_SELECT GLFW_KEY_A
 #define KEY_AREA_FILL GLFW_KEY_F
+#define KEY_AREA_RESET GLFW_KEY_D
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -628,6 +629,11 @@ cbKeyboard(GLFWwindow *window, int key, int scan, int action, int mod)
 			pie->selection.selecting = true;
 			pie->selection.pointSet = mod == GLFW_MOD_SHIFT;
 		}
+	}
+	if (key == KEY_AREA_RESET && action == GLFW_PRESS)
+	{
+		selectionAbort(&pie->selection);
+		pie->selection.r = (struct Recti){{0, 0}, {0, 0}};
 	}
 	if (key == KEY_AREA_FILL && action == GLFW_PRESS)
 	{

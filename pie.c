@@ -78,6 +78,7 @@ static const char *colorPickCmd[] = {"pcp", NULL};
 #define KEY_QUIT_NOSAVE GLFW_KEY_ESCAPE
 #define KEY_SAMPLE GLFW_KEY_S
 #define KEY_AREA_SELECT GLFW_KEY_A
+#define KEY_AREA_FILL GLFW_KEY_F
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -432,6 +433,14 @@ commitDraw(struct Image img, struct Image drw)
 }
 
 static inline void
+imageFill(struct Image i, struct Recti r, struct ColorRGBA c)
+{
+	for (int x = r.pos.x; x < r.size.x + r.pos.x; x++)
+		for (int y = r.pos.y; y < r.size.y + r.pos.y; y++)
+			i.data[x + y * i.w] = c;
+}
+
+static inline void
 mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
 {
 	if (pie->selection.selecting)
@@ -619,6 +628,12 @@ cbKeyboard(GLFWwindow *window, int key, int scan, int action, int mod)
 			pie->selection.selecting = true;
 			pie->selection.pointSet = mod == GLFW_MOD_SHIFT;
 		}
+	}
+	if (key == KEY_AREA_FILL && action == GLFW_PRESS)
+	{
+		imageFill(pie->canvas.img, pie->selection.r, pie->color);
+		glBindTexture(GL_TEXTURE_2D, pie->canvas.imgTex);
+		grImageUpdate(pie->canvas.img);
 	}
 	if (key == KEY_SAMPLE && action != GLFW_RELEASE)
 	{

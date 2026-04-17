@@ -30,14 +30,14 @@ struct Recti {
 	struct Vec2i pos, size;
 };
 
-struct Selection {
-	bool selecting, pointSet, selectionActive;
+struct Area {
+	bool selecting, pointSet, areaActive;
 	struct Recti r;
 };
 
 struct pie {
 	bool useStdin, useStdout, quit, m0Down, m1Down;
-	struct Selection selection;
+	struct Area area;
 	struct Canvas canvas;
 	struct ColorRGBA color;
 	double brushSize;
@@ -159,7 +159,7 @@ grImageUpdate(struct Image img)
 }
 
 static inline void
-grDrawSelection(struct Selection *s, struct Canvas *c, struct Vec2i win)
+grDrawArea(struct Area *s, struct Canvas *c, struct Vec2i win)
 {
 	glBegin(GL_LINE_LOOP);
 	glColor3ub(0xff, 0xff, 0xff);
@@ -394,15 +394,15 @@ strokeSizePencil(struct Image read,
 }
 
 static inline void
-selectionAbort(struct Selection *s)
+areaAbort(struct Area *s)
 {
 	s->selecting = false;
 	s->pointSet = false;
-	s->selectionActive = false;
+	s->areaActive = false;
 }
 
 static inline void
-selectionP2(struct Selection *s, struct Vec2i p)
+areaP2(struct Area *s, struct Vec2i p)
 {
 	if (p.x < s->r.pos.x)
 	{
@@ -444,7 +444,7 @@ imageFill(struct Image i, struct Recti r, struct ColorRGBA c)
 static inline void
 mouseDown(struct pie *pie, struct Vec2f start, struct Vec2f end)
 {
-	if (pie->selection.selecting)
+	if (pie->area.selecting)
 		return;
 	struct Vec2f rs = mtScreen2Canvas(start, &pie->canvas);
 	if (BOUNDS_ZERO(rs.x, rs.y, pie->canvas.img.w, pie->canvas.img.h))
@@ -486,17 +486,17 @@ mouse2Down(struct pie *pie, struct Vec2f start, struct Vec2f end)
 static inline void
 mouseJustUp(struct pie *pie)
 {
-	if (pie->selection.selecting)
+	if (pie->area.selecting)
 	{
-		if (!pie->selection.pointSet)
+		if (!pie->area.pointSet)
 		{
-			pie->selection.pointSet = true;
+			pie->area.pointSet = true;
 			return;
 		}
 
 		struct Vec2f m = mtScreen2Canvas(pie->m, &pie->canvas);
 		struct Vec2i mi = {(int)m.x, (int)m.y};
-		selectionP2(&pie->selection, mi);
+		areaP2(&pie->area, mi);
 		return;
 	}
 
@@ -508,13 +508,13 @@ mouseJustUp(struct pie *pie)
 static inline void
 mouseJustDown(struct pie *pie)
 {
-	if (!pie->selection.selecting || pie->selection.pointSet)
+	if (!pie->area.selecting || pie->area.pointSet)
 		return;
 	struct Vec2f m = mtScreen2Canvas(pie->m, &pie->canvas);
 	if (BOUNDS_ZERO(m.x, m.y, pie->canvas.img.w, pie->canvas.img.h))
-		pie->selection.r.pos = (struct Vec2i){(int)m.x, (int)m.y};
+		pie->area.r.pos = (struct Vec2i){(int)m.x, (int)m.y};
 	else
-		selectionAbort(&pie->selection);
+		areaAbort(&pie->area);
 }
 
 static bool
@@ -622,22 +622,22 @@ cbKeyboard(GLFWwindow *window, int key, int scan, int action, int mod)
 		askColor(&pie->color);
 	if (key == KEY_AREA_SELECT && action == GLFW_PRESS)
 	{
-		if (pie->selection.selecting)
-			selectionAbort(&pie->selection);
+		if (pie->area.selecting)
+			areaAbort(&pie->area);
 		else
 		{
-			pie->selection.selecting = true;
-			pie->selection.pointSet = mod == GLFW_MOD_SHIFT;
+			pie->area.selecting = true;
+			pie->area.pointSet = mod == GLFW_MOD_SHIFT;
 		}
 	}
 	if (key == KEY_AREA_RESET && action == GLFW_PRESS)
 	{
-		selectionAbort(&pie->selection);
-		pie->selection.r = (struct Recti){{0, 0}, {0, 0}};
+		areaAbort(&pie->area);
+		pie->area.r = (struct Recti){{0, 0}, {0, 0}};
 	}
 	if (key == KEY_AREA_FILL && action == GLFW_PRESS)
 	{
-		imageFill(pie->canvas.img, pie->selection.r, pie->color);
+		imageFill(pie->canvas.img, pie->area.r, pie->color);
 		glBindTexture(GL_TEXTURE_2D, pie->canvas.imgTex);
 		grImageUpdate(pie->canvas.img);
 	}
@@ -683,7 +683,7 @@ run(struct pie *pie, GLFWwindow *window)
 		struct Vec2f rs = mtScreen2Canvas(pie->m, &pie->canvas);
 		fprintf(stderr,
 			"\r\033[K%dx%d \tsize %.1f\t%.1f\t%.1f\tcolor "
-			"%02x%02x%02x%02x\tsel%c%d,%d%c%dx%d",
+			"%02x%02x%02x%02x\tarea%c%d,%d%c%dx%d",
 			pie->canvas.img.w,
 			pie->canvas.img.h,
 			pie->brushSize,
@@ -693,16 +693,16 @@ run(struct pie *pie, GLFWwindow *window)
 			pie->color.g,
 			pie->color.b,
 			pie->color.a,
-			pie->selection.selecting && !pie->selection.pointSet
+			pie->area.selecting && !pie->area.pointSet
 				? '>'
 				: ' ',
-			pie->selection.r.pos.x,
-			pie->selection.r.pos.y,
-			pie->selection.selecting && pie->selection.pointSet
+			pie->area.r.pos.x,
+			pie->area.r.pos.y,
+			pie->area.selecting && pie->area.pointSet
 				? '>'
 				: ' ',
-			pie->selection.r.size.x,
-			pie->selection.r.size.y);
+			pie->area.r.size.x,
+			pie->area.r.size.y);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glUseProgram(pie->canvas.bgSh.id);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -717,7 +717,7 @@ run(struct pie *pie, GLFWwindow *window)
 		}
 
 		glUseProgram(0);
-		grDrawSelection(&pie->selection, &pie->canvas, pie->win);
+		grDrawArea(&pie->area, &pie->canvas, pie->win);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

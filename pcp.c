@@ -92,44 +92,6 @@ mtHSV2RGBA(struct ColorHSV c)
 }
 
 static void
-inMouseCallback(GLFWwindow *window, int button, int action, int mod)
-{
-	(void)mod;
-	struct pcp *pcp = glfwGetWindowUserPointer(window);
-
-	glfwMakeContextCurrent(window);
-
-	if (button != GLFW_MOUSE_BUTTON_LEFT)
-		return;
-
-	pcp->m0Down = action == GLFW_PRESS;
-
-	pcp->selection = SEL_NONE;
-	if (action != GLFW_PRESS)
-		return;
-
-	struct Vec2f m;
-	glfwGetCursorPos(window, &m.x, &m.y);
-	if (BOUNDS(m, pcp->hsvWheel.r))
-	{
-		pcp->selection = SEL_HSV_WHEEL;
-		return;
-	}
-	if (BOUNDS(m, pcp->valBar.r))
-		pcp->selection = SEL_VAL_BAR;
-}
-
-static void
-inKeyboardCallback(GLFWwindow *window, int key, int scan, int action, int mod)
-{
-	(void)scan, (void)mod;
-	glfwMakeContextCurrent(window);
-	struct pcp *pcp = glfwGetWindowUserPointer(window);
-	if (key == KEY_CONFIRM && action != GLFW_RELEASE)
-		pcp->quit = true;
-}
-
-static void
 grDrawImage(unsigned int shader)
 {
 	glUseProgram(shader);
@@ -188,9 +150,8 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 	}
 	case SEL_VAL_BAR:
 	{
-		double x = CLAMP(m.x,
-				 pcp->valBar.r.pos.x,
-				 pcp->valBar.r.size.x + pcp->valBar.r.pos.x);
+		struct Rect r = pcp->valBar.r;
+		double x = CLAMP(m.x, r.pos.x, r.size.x + r.pos.x);
 		pcp->valBar.v =
 			(x - pcp->valBar.r.pos.x) / pcp->valBar.r.size.x;
 		break;
@@ -204,25 +165,65 @@ mouseDown(struct pcp *pcp, GLFWwindow *window)
 	pcp->color = mtHSV2RGBA(hsv);
 }
 
+static void
+cbMouse(GLFWwindow *window, int button, int action, int mod)
+{
+	(void)mod;
+	struct pcp *pcp = glfwGetWindowUserPointer(window);
+
+	glfwMakeContextCurrent(window);
+
+	if (button != GLFW_MOUSE_BUTTON_LEFT)
+		return;
+
+	pcp->m0Down = action == GLFW_PRESS;
+
+	pcp->selection = SEL_NONE;
+	if (action != GLFW_PRESS)
+		return;
+
+	struct Vec2f m;
+	glfwGetCursorPos(window, &m.x, &m.y);
+	if (BOUNDS(m, pcp->hsvWheel.r))
+	{
+		pcp->selection = SEL_HSV_WHEEL;
+		return;
+	}
+	if (BOUNDS(m, pcp->valBar.r))
+		pcp->selection = SEL_VAL_BAR;
+}
+
+static void
+cbKeyboard(GLFWwindow *window, int key, int scan, int action, int mod)
+{
+	(void)scan, (void)mod;
+	glfwMakeContextCurrent(window);
+	struct pcp *pcp = glfwGetWindowUserPointer(window);
+	if (key == KEY_CONFIRM && action != GLFW_RELEASE)
+		pcp->quit = true;
+}
+
 int
 main(void)
 {
 	struct pcp pcp = {0};
 
 	GLFWwindow *window;
-	if (!grInit(&pcp, &window, inMouseCallback, inKeyboardCallback))
+	struct Vec2i win = {WINW, WINH};
+	if (!grInit(&pcp, &window, win, false, cbMouse, cbKeyboard, NULL))
 		return EXIT_FAILURE;
 
 	unsigned int vao = grImgGenVAO();
 
 	pcp.hsvWheel.r.size = (struct Vec2f){WINW, WINW};
 	pcp.hsvWheel.pos = (struct Vec2f){WINW / 2., WINW / 2.};
-	grImgInitGr(
-		&pcp.hsvWheel.sh, pcp.hsvWheel.r, WINW, WINH, hsvWheelFragSrc);
+	grImgInitGr(&pcp.hsvWheel.sh, hsvWheelFragSrc);
+	grImgUpdate(&pcp.hsvWheel.sh, pcp.hsvWheel.r, WINW, WINH);
 	pcp.valBar.r.pos = (struct Vec2f){0, WINH - UI_VAL_HEIGHT};
 	pcp.valBar.r.size = (struct Vec2f){WINW, UI_VAL_HEIGHT};
 	pcp.color.a = 0xff;
-	grImgInitGr(&pcp.valBar.sh, pcp.valBar.r, WINW, WINH, valBarFragSrc);
+	grImgInitGr(&pcp.valBar.sh, valBarFragSrc);
+	grImgUpdate(&pcp.valBar.sh, pcp.valBar.r, WINW, WINH);
 
 	while (!glfwWindowShouldClose(window) && !pcp.quit)
 	{

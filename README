@@ -5,6 +5,7 @@ provides `pie`, the image editor and `pcp`, a color picker program
 features
 - uses farbfeld as the image format. see https://tools.suckless.org/farbfeld
 - stdin/stdout
+- area selection
 - simple terminal ui
 - <2k loc
 
@@ -52,13 +53,16 @@ duplex communication allows for better integration with other programs
 use /tmp/pie.sock as the socket path
 use `piec` to communicate with pie
 
+issues: both are unable to run more than one instance at a time. a solution for
+this is to add the process id to the name of the fifo/socket
+for fifo this is a bit difficult to do since you need to sync the scripts with
+the correct file for each instance. uds supports any filename via piec but pie
+needs support for that yet
+
 +++ todo +++
 - versioning
 - proper api for fifo / uds
 # pie
-- draw straight line when shift is pressed
-- eraser
-- fill tool
 # pcp
 - alpha slider
 +++ end todo +++

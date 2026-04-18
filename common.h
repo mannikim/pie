@@ -13,6 +13,10 @@ struct ColorRGBA {
 	unsigned char r, g, b, a;
 };
 
+struct Vec2i {
+	int x, y;
+};
+
 struct Vec2f {
 	double x, y;
 };
@@ -133,15 +137,16 @@ grGenShader(const char *vertSrc, const char *fragSrc)
 }
 
 static inline void
-grImgInitGr(struct ImgShader *sh,
-	    struct Rect r,
-	    double winW,
-	    double winH,
-	    const char *fragSrc)
+grImgInitGr(struct ImgShader *sh, const char *fragSrc)
 {
 	sh->id = grGenShader(imgVertSrc, fragSrc);
 	sh->uTr = glGetUniformLocation(sh->id, "uTr");
 	sh->uWin = glGetUniformLocation(sh->id, "uWin");
+}
+
+static inline void
+grImgUpdate(struct ImgShader *sh, struct Rect r, double winW, double winH)
+{
 	glUniform4f(sh->uTr, r.pos.x, r.pos.y, r.size.x, r.size.y);
 	glUniform2f(sh->uWin, winW, winH);
 }
@@ -149,14 +154,17 @@ grImgInitGr(struct ImgShader *sh,
 static inline bool
 grInit(void *data,
        GLFWwindow **window,
+       struct Vec2i win,
+       bool resize,
        GLFWmousebuttonfun mouse,
-       GLFWkeyfun key)
+       GLFWkeyfun key,
+       GLFWwindowsizefun winSize)
 {
 	if (!glfwInit())
 		return false;
 
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-	*window = glfwCreateWindow(WINW, WINH, WIN_TITLE, NULL, NULL);
+	glfwWindowHint(GLFW_RESIZABLE, resize);
+	*window = glfwCreateWindow(win.x, win.y, WIN_TITLE, NULL, NULL);
 
 	if (window == NULL)
 		return false;
@@ -165,6 +173,7 @@ grInit(void *data,
 	glfwSetWindowUserPointer(*window, data);
 	glfwSetMouseButtonCallback(*window, mouse);
 	glfwSetKeyCallback(*window, key);
+	glfwSetWindowSizeCallback(*window, winSize);
 
 	glfwSwapInterval(0);
 

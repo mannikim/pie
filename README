@@ -38,30 +38,9 @@ install
 
     make install
 
-branches
----
-i made these branches because they implement features not required for the
-base program and haven't completely stable api's yet
-
-fifo: implements fifo-based ipc
-attempt at making pie more modular
-use /tmp/pie.fifo as the fifo path
-
-uds: implements unix-domain socket-based ipc
-made to replace fifo
-duplex communication allows for better integration with other programs
-use /tmp/pie.sock as the socket path
-use `piec` to communicate with pie
-
-issues: both are unable to run more than one instance at a time. a solution for
-this is to add the process id to the name of the fifo/socket
-for fifo this is a bit difficult to do since you need to sync the scripts with
-the correct file for each instance. uds supports any filename via piec but pie
-needs support for that yet
-
 +++ todo +++
 - versioning
-- proper api for fifo / uds
+- proper api for sockets
 # pie
 # pcp
 - alpha slider

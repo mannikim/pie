@@ -1,12 +1,14 @@
 pie: mannikim's personal image editor
 ===
-provides `pie`, the image editor and `pcp`, a color picker program
+provides `pie`, the image editor, `pcp`, a color picker program and `piec`, a
+program to interact with a pie instance via unix-domain sockets
 
 features
 - uses farbfeld as the image format. see https://tools.suckless.org/farbfeld
 - stdin/stdout
 - area selection
 - simple terminal ui
+- unix-domain socket interface
 - <2k loc
 
 usage
@@ -19,6 +21,9 @@ to the program
 
 pcp takes no arguments and always returns the selected color in the stdout
 
+piec requires the socket path as the first argument and the command as the
+second argument
+
 configuring
 ---
 configure pie by editing the source code and recompiling
@@ -26,9 +31,6 @@ configure pie by editing the source code and recompiling
 build
 ---
 building requires a c99 compiler, libm, GLFW and GLEW
-
-the compiler needs to support `__attribute__((always_inline))`, or you can
-change the definition of the `ALWAYS_INLINE` macro in `common.h`
 
 building
 

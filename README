@@ -5,6 +5,7 @@ provides `pie`, the image editor and `pcp`, a color picker program
 features
 - uses farbfeld as the image format. see https://tools.suckless.org/farbfeld
 - stdin/stdout
+- area selection
 - simple terminal ui
 - <2k loc
 
@@ -62,8 +63,6 @@ needs support for that yet
 - versioning
 - proper api for fifo / uds
 # pie
-- draw straight line when shift is pressed
-- fill tool
 # pcp
 - alpha slider
 +++ end todo +++
